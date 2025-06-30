@@ -1,0 +1,66 @@
+# Configuration file for running BabyBench environments. See wiki for details:
+# https://babybench.github.io/2025/API/
+
+# --- General options --- #
+
+save_dir : results/self_touch
+behavior : self_touch   # options: self_touch, hand_regard
+scene : crib   # options: base, crib, cubes
+max_episode_steps : 1000
+frame_skip : 1
+render_size : 480
+save_logs_every: 1000
+
+# --- Sensory modalities --- #
+
+# Proprioception
+proprio_velocity : True
+proprio_torque : True
+proprio_limits : True
+proprio_actuation : True
+
+# Vestibular
+vestibular_active : True
+
+# Vision
+vision_active : False
+vision_resolution : 64
+
+# Touch
+touch_active : True
+touch_scale : 1.
+touch_function : force_vector
+touch_response : spread_linear
+touch_hands : True
+touch_fingers : True
+touch_arms : True
+touch_feet : True
+touch_legs : True
+touch_body : True
+touch_head : True
+touch_eyes : False
+
+# --- Motor modality --- #
+
+# Actuation model
+actuation_model : spring_damper  # options: spring_damper, muscle, positional
+
+# Actuate joints
+act_hands : True
+act_fingers : True
+act_arms : True
+act_feet : False
+act_legs : True
+act_body : True
+act_head : True
+act_eyes : False
+
+# Lock joints
+lock_hands : False
+lock_fingers : False
+lock_arms : False
+lock_feet : True
+lock_legs : False
+lock_body : False
+lock_head : False
+lock_eyes : True
