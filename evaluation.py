@@ -12,14 +12,15 @@ import mimoEnv.utils as env_utils
 import babybench.utils as bb_utils
 import babybench.eval as bb_eval
 
+from stable_baselines3 import PPO
+
 def main():
-    
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='examples/config_test_installation.yml', type=str,
+    parser.add_argument('--config', default='examples/config_handregard.yml', type=str,
                         help='The configuration file to set up environment variables')
-    parser.add_argument('--render', default=True,  type=bool,
+    parser.add_argument('--render', default=True, type=bool,
                         help='Renders a video for each episode during the evaluation.')
-    parser.add_argument('--duration', default=1000, type=int,
+    parser.add_argument('--duration', default=10000, type=int,
                         help='Total timesteps per evaluation episode')
     parser.add_argument('--episodes', default=10, type=int,
                         help='Number of evaluation episode')
@@ -29,9 +30,8 @@ def main():
         config = yaml.safe_load(f)
 
     env = bb_utils.make_env(config, training=False)
-    env.reset()
+    obs, _ = env.reset()
 
-    # Initialize evaluation object
     evaluation = bb_eval.EVALS[config['behavior']](
         env=env,
         duration=args.duration,
@@ -41,6 +41,10 @@ def main():
 
     # Preview evaluation of training log
     evaluation.eval_logs()
+
+    # ====== 加载训练好的模型 ======
+    model_path = os.path.join(config['save_dir'], "model")  # 注意模型名
+    model = PPO.load(model_path, env=env)
 
     for ep_idx in range(args.episodes):
         print(f'Running evaluation episode {ep_idx+1}/{args.episodes}')
@@ -52,14 +56,7 @@ def main():
         for t_idx in range(args.duration):
 
             # Select action
-            action = env.action_space.sample()
-
-            # ---------------------------------------------------# 
-            #                                                    #
-            # TODO REPLACE WITH CALL TO YOUR TRAINED POLICY HERE #
-            # action = policy(obs)                               #
-            #                                                    #
-            # ---------------------------------------------------#
+            action, _ = model.predict(obs, deterministic=True)
 
             # Perform step in simulation
             obs, _, _, _, info = env.step(action)
