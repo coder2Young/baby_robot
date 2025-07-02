@@ -4,7 +4,7 @@ import os
 import argparse
 import yaml
 
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, SAC
 
 import sys
 sys.path.append(".")
@@ -35,12 +35,13 @@ def main():
 
     # ---- 3. 构建ICM、奖励管理器、wrapper ----
     icm = ICMModule(obs_dim=obs_dim, action_dim=action_dim, latent_dim=8, hidden_dim=256)
-    reward_mod = SoftmaxTouchReward(num_parts=num_parts, tau=2.0, total_reward=2.0)
+    # 修改tau，鼓励触摸部位的多样性
+    reward_mod = SoftmaxTouchReward(num_parts=num_parts, tau=10.0, total_reward=2.0)
     wrapped_env = ICMRewardWrapper(env, icm, reward_mod, lambda_icm=0.5, lambda_touch=0.5)
     wrapped_env.reset()
 
     # ---- 4. RL算法集成，直接用PPO训练 ----
-    model = PPO("MultiInputPolicy", wrapped_env, verbose=1)
+    model = PPO("MultiInputPolicy", wrapped_env, verbose=1, ent_coef=0.05)
 
     model.learn(total_timesteps=args.train_for)
     

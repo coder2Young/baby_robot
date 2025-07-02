@@ -1,9 +1,9 @@
 # babybench_icm/icm/icm_module.py
 
 import torch
-from icm.vae import VAE
-from icm.forward import ForwardModel
-from icm.inverse_cvae import InverseCVAE
+from babybench_icm.icm.vae import VAE
+from babybench_icm.icm.forward import ForwardModel
+from babybench_icm.icm.inverse_cvae import InverseCVAE
 
 class ICMModule:
     """
