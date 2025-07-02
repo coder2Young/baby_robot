@@ -1,5 +1,11 @@
 import os
 import numpy as np
+
+# Add to render correctly
+import matplotlib
+matplotlib.use('Agg')
+matplotlib.rcParams['figure.dpi'] = 100
+
 import matplotlib.pyplot as plt
 import gymnasium as gym
 import mujoco
@@ -143,6 +149,8 @@ def view_touches(env, focus_body='hip', contact_with=None):
     zs_red = points_red[:, 2] - target_pos[2]
 
     fig = plt.figure(figsize=(6,6), dpi=100)
+    #print("fig dpi:", fig.dpi)
+    #print("fig canvas width, height:", fig.canvas.get_width_height())
     ax = fig.add_subplot(111, projection='3d')
     ax.view_init(elev=90, azim=0, roll=0)
     # Draw sensor points
