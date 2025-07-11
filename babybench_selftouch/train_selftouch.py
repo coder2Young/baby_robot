@@ -13,12 +13,12 @@ import babybench.utils as bb_utils
 
 from icm.icm_module import ICMModule
 from rewards import SoftmaxTouchReward
-from icm_wrapper import ICMRewardWrapper
+from babybench_selftouch.selftouch_wrapper import ICMRewardWrapper
 
 def main():
     # ---- 1. 解析参数 ----
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='babybench_icm/config_icm.yml', type=str)
+    parser.add_argument('--config', default='babybench_selftouch/config_selftouch.yml', type=str)
     parser.add_argument('--train_for', default=10000, type=int)
     args = parser.parse_args()
     with open(args.config) as f:
@@ -29,6 +29,15 @@ def main():
     # BabyBench环境通常是vectorized env，这里用obs[0]作为第一个环境的观测
     obs0 = obs[0]
 
+    # # 观测维度和动作维度
+    # # 观测包含observation和touch两个部分
+    # print(f"Observation keys: {obs0.keys()}")
+    # print(f"Observation shape: {obs0['observation'].shape}, Touch shape: {obs0['touch'].shape}")
+    # # 打印Observation
+    # print(f"Observation: {obs0['observation']}")
+    # print(f"Action shape: {env.action_space.shape}")
+    # exit(0)  # 直接退出，避免后续代码执行
+
     obs_dim = len(obs0['observation']) + len(obs0['touch'])  # 观测维度 = 观测 + 触摸部位
     action_dim = env.action_space.shape[0]
     num_parts = len(obs0['touch'])
@@ -37,7 +46,7 @@ def main():
     icm = ICMModule(obs_dim=obs_dim, action_dim=action_dim, latent_dim=8, hidden_dim=256)
     # 修改tau，鼓励触摸部位的多样性
     reward_mod = SoftmaxTouchReward(num_parts=num_parts, tau=10.0, total_reward=2.0)
-    wrapped_env = ICMRewardWrapper(env, icm, reward_mod, lambda_icm=0.5, lambda_touch=0.5)
+    wrapped_env = ICMRewardWrapper(env, icm, reward_mod, lambda_icm=0.5, lambda_touch=100, lambda_hand_touch=0.5)
     wrapped_env.reset()
 
     # ---- 4. RL算法集成，直接用PPO训练 ----

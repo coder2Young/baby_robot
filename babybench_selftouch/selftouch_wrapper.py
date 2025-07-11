@@ -8,12 +8,13 @@ class ICMRewardWrapper(gym.Wrapper):
     """
     自定义奖励包装器，适配BabyBench obs['touch'] API。
     """
-    def __init__(self, env, icm_module, reward_module, lambda_icm=0.5, lambda_touch=0.5, touch_threshold=1e-6):
+    def __init__(self, env, icm_module, reward_module, lambda_icm=0.5, lambda_touch=0.5, lambda_hand_touch=0.5,touch_threshold=1e-6):
         super().__init__(env)
         self.icm = icm_module
         self.reward_mod = reward_module
         self.lambda_icm = lambda_icm
         self.lambda_touch = lambda_touch
+        self.lambda_hand_touch = lambda_hand_touch
         self.touch_threshold = touch_threshold
         self.last_obs = None
         self.last_action = None
@@ -46,7 +47,24 @@ class ICMRewardWrapper(gym.Wrapper):
         self.reward_mod.update(touched_parts)
         touch_rewards = self.reward_mod.compute_rewards()
         touch_reward = np.sum(touch_rewards[touched_parts]) if len(touched_parts) > 0 else 0.0
-        total_reward = self.lambda_icm * icm_reward + self.lambda_touch * touch_reward
+        
+        hand_touch_reward = 0.0
+        # 手部触摸给额外奖励, 左手的part位置为19-21,右手为13-15
+        if 19 in touched_parts or 20 in touched_parts or 21 in touched_parts:
+            hand_touch_reward += 1.0
+        if 13 in touched_parts or 14 in touched_parts or 15 in touched_parts:
+            hand_touch_reward += 1.0
+
+        total_reward = self.lambda_icm * icm_reward + self.lambda_touch * touch_reward + self.lambda_hand_touch * hand_touch_reward
+        
+        # 打印 用lambda加权后 的reward分量
+        print(f"ICM Reward: {self.lambda_icm * icm_reward:.4f}, "
+              f"Touch Reward: {self.lambda_touch * touch_reward:.4f}, "
+                f"Hand Touch Reward: {self.lambda_hand_touch * hand_touch_reward:.4f}, "
+              f"Total Reward: {total_reward:.4f}")
+        
+
+        
         self.last_obs = obs
         self.last_action = action
         return obs, total_reward, terminated, truncated, info

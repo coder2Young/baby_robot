@@ -1,9 +1,9 @@
 # babybench_icm/utils.py
 
 import babybench.utils as bb_utils
-from babybench_icm.icm.icm_module import ICMModule
-from babybench_icm.rewards import SoftmaxTouchReward
-from babybench_icm.icm_wrapper import ICMRewardWrapper
+from babybench_selftouch.icm.icm_module import ICMModule
+from babybench_selftouch.rewards import SoftmaxTouchReward
+from babybench_selftouch.selftouch_wrapper import ICMRewardWrapper
 import numpy as np
 
 def make_icm_env(config, icm_kwargs=None, reward_kwargs=None, wrapper_kwargs=None, training=True):

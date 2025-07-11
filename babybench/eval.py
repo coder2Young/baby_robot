@@ -23,6 +23,7 @@ class Eval():
         try:
             with open(f'{self._save_dir}/logs/training.pkl', 'rb') as f:
                 logs = pickle.load(f)
+                #print(f"Logs", logs)
         except:
             print(f'Training logs not found -- make sure to use the correct save_dir in the config')
             return None
@@ -95,6 +96,7 @@ class EvalHandRegard(Eval):
             hand_in_view += logs[-ep]['right_eye_left_hand']
             hand_in_view += logs[-ep]['left_eye_left_hand']
             steps += logs[-ep]['steps']
+        #print(f'Hand in view: {hand_in_view}, Steps: {steps}')
         score = hand_in_view / (4 * steps)
         return score
 

@@ -22,21 +22,17 @@ def flatten_obs(obs):
     else:
         return obs['observation'].astype(np.float32)
 
-def to_grayscale(img):
-    # RGB转灰度
-    if img.ndim == 3 and img.shape[2] == 3:
-        return np.dot(img[...,:3], [0.299, 0.587, 0.114]).astype(np.float32)
-    else:
-        return img.astype(np.float32)
+def to_grayscale(x):
+   return 0.2989*x[:,:,0] + 0.5870*x[:,:,1] + 0.1140*x[:,:,2]
 
 def simple_saliency(rgb_img):
-    """
-    简单拉普拉斯边缘能量，作为saliency奖励
-    """
     gray_img = to_grayscale(rgb_img)
+    # Define a simple Laplacian kernel
     laplacian_kernel = np.array([[0, -1, 0],
-                                 [-1, 4, -1],
-                                 [0, -1, 0]])
+                                  [-1, 4, -1],
+                                  [0, -1, 0]])
+    # Apply the kernel using convolution
     edges = convolve(gray_img, laplacian_kernel, mode='reflect')
-    energy = np.sqrt(np.sum(edges ** 2)) / (gray_img.shape[0] * gray_img.shape[1])
+    # Compute energy as sum of squared edge intensities (normalized)
+    energy = np.sqrt(np.sum(edges**2)) / (gray_img.shape[0] * gray_img.shape[1])
     return energy

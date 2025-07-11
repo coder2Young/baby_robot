@@ -16,11 +16,11 @@ from stable_baselines3 import PPO
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='examples/config_handregard.yml', type=str,
+    parser.add_argument('--config', default='examples/config_selftouch.yml', type=str,
                         help='The configuration file to set up environment variables')
     parser.add_argument('--render', default=True, type=bool,
                         help='Renders a video for each episode during the evaluation.')
-    parser.add_argument('--duration', default=10000, type=int,
+    parser.add_argument('--duration', default=1000, type=int,
                         help='Total timesteps per evaluation episode')
     parser.add_argument('--episodes', default=10, type=int,
                         help='Number of evaluation episode')

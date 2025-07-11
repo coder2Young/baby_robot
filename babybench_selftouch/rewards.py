@@ -29,6 +29,7 @@ class SoftmaxTouchReward:
         exp_neg_counts = np.exp(-self.touch_counts / self.tau)
         probs = exp_neg_counts / np.sum(exp_neg_counts)
         rewards = self.total_reward * probs
+        
         return rewards
 
     def get_touch_distribution(self):

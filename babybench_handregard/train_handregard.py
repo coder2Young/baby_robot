@@ -11,48 +11,47 @@ sys.path.append(".")
 sys.path.append("..")
 import babybench.utils as bb_utils
 
-from forward_model.forward_model import ForwardModel
-from rewards import HandSaliencyReward
+from multimodal_ae import MultimodalAEManager
+from rewards import HandSaliencyReward, HandSkinColorReward
 from handregard_wrapper import HandRegardRewardWrapper
 
 import babybench.eval as bb_eval
-
 
 def main():
     # ---- 1. 解析参数 ----
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='babybench_handregard/config_handregard.yml', type=str)
-    parser.add_argument('--train_for', default=100000, type=int)
+    parser.add_argument('--train_for', default=10000, type=int)
     args = parser.parse_args()
     with open(args.config) as f:
         config = yaml.safe_load(f)
     # ---- 2. 初始化环境 ----
-    env = bb_utils.make_env(config)
+    env = bb_utils.make_env(config, training=True)
     obs = env.reset()
-    # BabyBench环境通常是vectorized env，这里用obs[0]作为第一个环境的观测
     obs0 = obs[0]
 
-    # 打印结构（debug用）
-    # print("Observation structure:", obs0.keys())
-    # print("obs[observation]", "type", type(obs0['observation']),"shape", obs0['observation'].shape)
-    # print("obs[eye_left]", "type", type(obs0['eye_left']),obs0['eye_left'].shape, "dtype", obs0['eye_left'].dtype)
-    # print("obs[eye_right]", "type", type(obs0['eye_right']),obs0['eye_right'].shape, "dtype", obs0['eye_right'].dtype)
+    # --- 构建多模态AE ---
+    img_shape = obs0['eye_left'].shape    # (64,64,3)
+    proprio_dim = len(obs0['observation'])
+    multimodal_ae = MultimodalAEManager(img_shape=img_shape[:2], proprio_dim=proprio_dim, device='cuda' if hasattr(obs0['eye_left'], 'cuda') else 'cpu')
 
-    obs_dim = len(obs0['observation'])    # 只用'observation'的长度
-    action_dim = env.action_space.shape[0]
-    img_shape = obs0['eye_left'].shape    # (64,64,3)，左右眼shape一致
+    hand_saliency_reward_mod = HandSaliencyReward(use_both_eyes=True)
+    hand_skin_color_reward_mod = HandSkinColorReward()
 
-    # ---- 3. 构建视觉正模型与saliency奖励 ----
-    forward_model = ForwardModel(obs_dim=obs_dim, action_dim=action_dim, img_shape=img_shape)
-    hand_reward_mod = HandSaliencyReward(use_both_eyes=True)
-    # 注意：lambda_pred和lambda_sal是权重系数，调节预测误差和saliency奖励的影响
-    # Predicted Reward: 4359.6851, Saliency Reward: 0.1498
-    # Weighted Predicted Reward: -4359.6851, Weighted Saliency Reward: 14975.5957 for lambda_pred=-1.0, lambda_sal=1e5
-    wrapped_env = HandRegardRewardWrapper(env, forward_model, hand_reward_mod, lambda_pred=-1e-4, lambda_sal=1e2)
+    # --- 包装环境 ---
+    wrapped_env = HandRegardRewardWrapper(
+        env,
+        multimodal_ae,
+        hand_saliency_reward_mod,
+        hand_skin_color_reward_mod,
+        lambda_v=1.0, lambda_p=0.2, lambda_m=1.0,
+        lambda_sal=20.0, lambda_skin=10.0,
+        motion_bonus_scale=1.0, decay_steps=10000
+    )
     wrapped_env.reset()
 
     # ---- 4. RL算法集成 ----
-    model = PPO("MultiInputPolicy", wrapped_env, verbose=1, ent_coef=0.05)
+    model = PPO("MultiInputPolicy", wrapped_env, verbose=1, ent_coef=0.01, learning_rate=3e-4)
     model.learn(total_timesteps=args.train_for)
 
     # ---- 5. 保存模型 ----
