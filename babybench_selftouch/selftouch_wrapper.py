@@ -1,83 +1,101 @@
-# babybench_icm/icm_wrapper.py
+# babybench_selftouch/selftouch_wrapper.py
 
 import gymnasium as gym
 import numpy as np
 import torch
 
-class ICMRewardWrapper(gym.Wrapper):
+# =============================================================================
+#  Design Philosophy Change Note:
+#
+#  This file has been refactored. The original `ICMRewardWrapper` was responsible
+#  for calculating BOTH touch rewards and ICM curiosity rewards.
+#
+#  To create a cleaner, more modular design, this logic has been split:
+#
+#  1.  This Wrapper (`TouchRewardWrapper`): Is now ONLY responsible for logic
+#      directly related to the environment's state, i.e., calculating rewards
+#      based on the `obs['touch']` values.
+#
+#  2.  A new Callback (`icm_callback.py`): Is now responsible for ALL logic
+#      related to the ICM module. It calculates the ICM reward at each step
+#      and orchestrates the batch training of the ICM model at the end of
+#      each rollout.
+#
+#  This separation of concerns makes the system more robust and easier to modify.
+# =============================================================================
+
+
+class TouchRewardWrapper(gym.Wrapper):
     """
-    自定义奖励包装器，适配BabyBench obs['touch'] API。
+    一个只负责计算和添加触摸相关奖励的装饰器。
+    ICM奖励的逻辑被移至一个专门的Callback中。
     """
-    def __init__(self, env, icm_module, reward_module, lambda_icm=0.5, lambda_touch=0.5, lambda_hand_touch=0.5,touch_threshold=1e-6):
+    def __init__(self, env, reward_module, lambda_touch=100.0, lambda_hand_touch=0.5, touch_threshold=1e-6):
         super().__init__(env)
-        self.icm = icm_module
         self.reward_mod = reward_module
-        self.lambda_icm = lambda_icm
         self.lambda_touch = lambda_touch
         self.lambda_hand_touch = lambda_hand_touch
         self.touch_threshold = touch_threshold
-        self.last_obs = None
-        self.last_action = None
 
     def reset(self, **kwargs):
-        obs = self.env.reset(**kwargs)
-        self.last_obs = None
-        self.last_action = None
+        """Resets the environment and the touch reward counter."""
         self.reward_mod.reset()
-        return obs
+        return self.env.reset(**kwargs)
 
     def step(self, action):
+        """
+        Performs a step in the environment and calculates ONLY the touch-based rewards.
+        """
         obs, extrinsic_reward, terminated, truncated, info = self.env.step(action)
-        if self.last_obs is not None and self.last_action is not None:
-            flat_obs = flatten_obs(self.last_obs)
-            flat_next_obs = flatten_obs(obs)
-            flat_action = np.array(self.last_action, dtype=np.float32)
-            norm_fwd_loss, _ = self.icm.compute_forward_loss(
-                torchify(flat_obs), torchify(flat_action), torchify(flat_next_obs)
-            )
-            norm_inv_loss, _ = self.icm.compute_inverse_loss(
-                torchify(flat_obs), torchify(flat_next_obs), torchify(flat_action)
-            )
-            icm_reward = (norm_fwd_loss + norm_inv_loss) / 2.0
-        else:
-            icm_reward = 0.0
-        # 触摸奖励
+        
+        # --- 触摸奖励计算 (保留这部分) ---
         touched_array = obs['touch']
         touched_parts = np.where(touched_array > self.touch_threshold)[0]
-        self.reward_mod.update(touched_parts)
-        touch_rewards = self.reward_mod.compute_rewards()
-        touch_reward = np.sum(touch_rewards[touched_parts]) if len(touched_parts) > 0 else 0.0
         
+        # 更新触摸计数器
+        self.reward_mod.update(touched_parts)
+        
+        # 基于更新后的计数器，计算当前步的奖励
+        touch_rewards_per_part = self.reward_mod.compute_rewards()
+        touch_reward = np.sum(touch_rewards_per_part[touched_parts]) if len(touched_parts) > 0 else 0.0
+        
+        # --- 手部触摸奖励计算 (保留这部分) ---
         hand_touch_reward = 0.0
         # 手部触摸给额外奖励, 左手的part位置为19-21,右手为13-15
-        if 19 in touched_parts or 20 in touched_parts or 21 in touched_parts:
-            hand_touch_reward += 1.0
-        if 13 in touched_parts or 14 in touched_parts or 15 in touched_parts:
-            hand_touch_reward += 1.0
+        # Note: A more robust way might be to get hand part indices from the env config
+        hand_parts = {13, 14, 15, 19, 20, 21}
+        if any(part in touched_parts for part in hand_parts):
+            hand_touch_reward = 1.0
 
-        total_reward = self.lambda_icm * icm_reward + self.lambda_touch * touch_reward + self.lambda_hand_touch * hand_touch_reward
+        # --- 计算总触摸奖励 ---
+        # 这个wrapper现在只负责返回所有与触摸相关的奖励。
+        # extrinsic_reward (通常为0) + 我们计算的触摸奖励。
+        total_touch_reward = extrinsic_reward + self.lambda_touch * touch_reward + self.lambda_hand_touch * hand_touch_reward
         
-        # 打印 用lambda加权后 的reward分量
-        print(f"ICM Reward: {self.lambda_icm * icm_reward:.4f}, "
-              f"Touch Reward: {self.lambda_touch * touch_reward:.4f}, "
-                f"Hand Touch Reward: {self.lambda_hand_touch * hand_touch_reward:.4f}, "
-              f"Total Reward: {total_reward:.4f}")
+        # --- 关于ICM奖励的重要说明 ---
+        # 请注意，此函数返回的 'total_touch_reward' *不包含* ICM好奇心奖励。
+        # 好奇心奖励将在我们的自定义 `ICMCallback` 的 `_on_step` 方法中被计算出来，
+        # 并直接添加到SB3的奖励缓冲区中。
+        # 这样做，PPO代理在进行策略更新时，看到的是一个已经包含了所有分量的最终奖励。
         
+        return obs, total_touch_reward, terminated, truncated, info
 
-        
-        self.last_obs = obs
-        self.last_action = action
-        return obs, total_reward, terminated, truncated, info
+# --- 辅助函数 ---
+# 这些函数现在将被Callback使用，所以我们把它们留在这里作为一个公共的工具模块。
 
-def torchify(x):
+def torchify(x, device='cpu'):
+    """Converts numpy arrays or lists to torch tensors."""
     if isinstance(x, np.ndarray):
         x = torch.from_numpy(x).float().unsqueeze(0)
     elif isinstance(x, (list, tuple)):
         x = torch.tensor(x).float().unsqueeze(0)
     elif isinstance(x, torch.Tensor) and x.ndim == 1:
         x = x.unsqueeze(0)
-    return x
+    return x.to(device)
 
 def flatten_obs(obs):
-    # 拼接observation + touch（如有需要也可加vestibular）
+    """
+    Flattens the observation dictionary from the environment into a single vector.
+    """
+    # 拼接observation + touch
     return np.concatenate([obs['observation'], obs['touch']]).astype(np.float32)
