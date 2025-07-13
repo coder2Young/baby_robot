@@ -5,12 +5,15 @@ import babybench.utils as bb_utils
 
 class Eval():
 
-    def __init__(self, env, duration, render, save_dir):
+    # --- MODIFIED: Added 'training_log_dir' to __init__ ---
+    def __init__(self, env, duration, render, save_dir, training_log_dir=None):
         self._env = env
         self._duration = duration
         self._render = render
         self._save_dir = save_dir
         self._images = []
+        # If no specific training log dir is given, assume it's the same as the save_dir
+        self._training_log_dir = training_log_dir if training_log_dir is not None else self._save_dir
 
     def reset(self):
         self._images = []
@@ -20,12 +23,14 @@ class Eval():
         return None
 
     def eval_logs(self):
+        # --- MODIFIED: Use the correct directory to read training logs ---
+        log_path = os.path.join(self._training_log_dir, 'logs', 'training.pkl')
         try:
-            with open(f'{self._save_dir}/logs/training.pkl', 'rb') as f:
+            with open(log_path, 'rb') as f:
                 logs = pickle.load(f)
-                #print(f"Logs", logs)
-        except:
-            print(f'Training logs not found -- make sure to use the correct save_dir in the config')
+        except FileNotFoundError:
+            print(f'Training logs not found at: {log_path}')
+            print(f'Ensure this is the correct base directory from your training run.')
             return None
         score = self._eval_logs(logs)
         print(f'Preliminary training score: {score}')
@@ -49,12 +54,12 @@ class Eval():
             self._render_image()
 
     def end(self, episode=0):
-        # Store trajectories for submission
+        # This part now works correctly because the directories are created beforehand
+        # in the main evaluation.py script.
         with open(f'{self._save_dir}/logs/evaluation_{episode}.pkl', 'wb') as f:
             pickle.dump(self._trajectories, f, -1)
-        # Store videos for submission
         if self._render:
-            bb_utils.evaluation_video(self._images, f'{self._save_dir}/videos/evaluation_{episode}.avi')
+            bb_utils.evaluation_video(self._images, f'{self._save_dir}/videos/evaluation_{episode}.mp4') # Changed to mp4 for better compatibility
 
 class EvalSelfTouch(Eval):
 
@@ -62,8 +67,6 @@ class EvalSelfTouch(Eval):
         super(EvalSelfTouch, self).__init__(**kwargs)
 
     def _eval_logs(self, logs):
-        # Count total unique touches for left and right hands
-        # during last 10000 episodes logged
         n_episodes = min(10001, len(logs))
         right_touches = np.array([])
         left_touches = np.array([])
@@ -72,7 +75,6 @@ class EvalSelfTouch(Eval):
                 (right_touches, logs[-ep]['right_hand_touches']),0))
             left_touches = np.unique(np.concatenate(
                 (left_touches, logs[-ep]['left_hand_touches']),0))
-        # maximum of 34 geoms touched per hand
         score = (len(right_touches) + len(left_touches)) / (34*2)
         return score
 
@@ -85,8 +87,6 @@ class EvalHandRegard(Eval):
         super(EvalHandRegard, self).__init__(**kwargs)
 
     def _eval_logs(self, logs):
-        # Average time looking at hands
-        # during last 1000 episodes logged
         n_episodes = min(10001, len(logs))
         hand_in_view = 0
         steps = 0
@@ -96,7 +96,6 @@ class EvalHandRegard(Eval):
             hand_in_view += logs[-ep]['right_eye_left_hand']
             hand_in_view += logs[-ep]['left_eye_left_hand']
             steps += logs[-ep]['steps']
-        #print(f'Hand in view: {hand_in_view}, Steps: {steps}')
         score = hand_in_view / (4 * steps)
         return score
 
