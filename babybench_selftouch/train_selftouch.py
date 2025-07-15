@@ -4,6 +4,7 @@ import os
 import argparse
 import yaml
 import torch
+import numpy as np
 
 from stable_baselines3 import PPO
 import sys
@@ -20,7 +21,7 @@ def main():
     # ---- 1. 解析参数 (无变化) ----
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='babybench_selftouch/config_selftouch.yml', type=str)
-    parser.add_argument('--train_for', default=300000, type=int)
+    parser.add_argument('--train_for', default=100000, type=int)
     args = parser.parse_args()
     with open(args.config) as f:
         config = yaml.safe_load(f)
@@ -29,39 +30,52 @@ def main():
     env = bb_utils.make_env(config)
     obs, _ = env.reset()
     obs0 = obs
+    
     obs_dim = len(obs0['observation']) + len(obs0['touch'])
     action_dim = env.action_space.shape[0]
     num_parts = len(obs0['touch'])
 
     # ---- 3. 构建ICM、奖励管理器、wrapper和callback ----
     icm = ICMModule(obs_dim=obs_dim, action_dim=action_dim, latent_dim=64, hidden_dim=512, lr=1e-4)
-    reward_mod = SoftmaxTouchReward(num_parts=num_parts, tau=10.0, total_reward=2.0)
     
-    # --- MODIFIED: Pass new arguments to the wrapper ---
+    # --- Part-specific tau vector creation (无变化) ---
+    tau_hands = 10.0
+    tau_others = 1.3
+    tau_vector = np.full(num_parts, tau_others, dtype=np.float32)
+    hand_parts_indices = [13, 14, 15, 19, 20, 21]
+    tau_vector[hand_parts_indices] = tau_hands
+    
+    print("Using part-specific reward decay rates (tau).")
+    print(f"Tau for hands: {tau_hands}, Tau for other parts: {tau_others}")
+    
+    reward_mod = SoftmaxTouchReward(num_parts=num_parts, tau=tau_vector, total_reward=2.0)
+    
+    # --- MODIFIED: Update Wrapper instantiation with new parameters ---
+    # We now pass 'reward_window_duration' and 'penalty_value' to enable the new mechanism.
     wrapped_env = TouchRewardWrapper(
         env, 
-        reward_mod, 
-        #num_parts=num_parts,      # Pass the number of touchable parts
-        cooldown_period=50,       # Set the refractory period to 50 steps
-        lambda_touch=100, 
-        lambda_hand_touch=0.5
+        reward_mod,
+        reward_window_duration=50, # The duration of the positive reward window
+        #penalty_value=-0.2,        # The penalty for sticking beyond the window
+        #penalty_window_duration=200, # The duration of the penalty phase
+        lambda_touch=50, 
+        lambda_hand_touch=1.0
     )
     
-    # Callback instantiation remains the same
+    # ICM Callback instantiation remains the same
     icm_callback = ICMCallback(
         icm_module=icm, 
         save_path=config['save_dir'],
-        save_freq=50000,
-        lambda_icm=1.0,
+        save_freq=10000,
+        lambda_icm=1.5,
         n_epochs=4,
         batch_size=256,
         verbose=0
     )
     
     # ---- 4. RL算法集成 (无变化) ----
-    model = PPO("MultiInputPolicy", wrapped_env, verbose=1, ent_coef=0.01)
+    model = PPO("MultiInputPolicy", wrapped_env, verbose=1, ent_coef=0.05)
 
-    # learn() call remains the same
     model.learn(total_timesteps=args.train_for, callback=icm_callback)
     
     # ---- 5. 保存最终模型 (无变化) ----
