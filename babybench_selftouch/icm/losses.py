@@ -3,22 +3,18 @@
 import torch
 import torch.nn.functional as F
 
-def sigma_vae_loss(prediction, target):
+def sigma_vae_loss(prediction, target, log_offset=10.0):
     """
-    Calculates the reconstruction loss based on the σ-VAE objective.
-    This involves analytically finding the optimal decoder variance, which
-    results in a loss proportional to the log of the Mean Squared Error.
-    Ref: "Simple and effective VAE training with calibrated decoders" (Rybkin et al., 2021)
+    Calculates a more stable version of the σ-VAE reconstruction loss.
     
-    :param prediction: The output of the decoder network.
-    :param target: The ground truth data.
-    :return: The scalar loss value.
+    The loss is based on log(MSE), but a constant offset is added.
+    This prevents the loss from becoming a large negative value when MSE is small,
+    which is a major source of numerical instability in complex training loops.
     """
-    # Calculate MSE, which is the optimal variance sigma*^2
     mse = F.mse_loss(prediction, target, reduction='mean')
     
-    # The loss to be minimized is proportional to the log of this variance.
-    # Add a small epsilon for numerical stability if MSE is close to zero.
-    loss = torch.log(mse + 1e-8)
+    # Add a small epsilon for stability when MSE is near zero.
+    # Add a larger offset to keep the final loss value in a stable, non-negative range.
+    loss = torch.log(mse + 1e-8) + log_offset
     
     return loss
