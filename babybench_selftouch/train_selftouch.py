@@ -49,10 +49,10 @@ def main():
         wrapped_env = TouchRewardWrapper(
             env, 
             reward_mod,
-            reward_window_duration=50,
+            reward_window_duration=80,
             cooldown_period=100, # Using the refined cooldown mechanism
             lambda_touch=10.0,   # Start with a strong touch incentive
-            lambda_hand_touch=50.0
+            lambda_hand_touch=200.0
         )
         return wrapped_env
 
@@ -75,7 +75,7 @@ def main():
         total_training_steps=args.train_for,
         save_path=config['save_dir'],
         save_freq=20000,
-        lambda_icm_schedule=(0.5, 50.0),    # Schedule for ICM reward: (start, end)
+        lambda_icm_schedule=(1, 20.0),    # Schedule for ICM reward: (start, end)
         lambda_touch_schedule=(50.0, 5.0), # Schedule for Touch reward: (start, end)
         n_epochs=8,
         batch_size=512,
@@ -84,7 +84,8 @@ def main():
     
     # ---- 4. RL算法集成 ----
     # Using the tuned PPO hyperparameters we discussed for better stability
-    model = PPO("MultiInputPolicy", vec_env, verbose=1, ent_coef=0.05, vf_coef=1.0, gae_lambda=0.9)
+    model = PPO("MultiInputPolicy", vec_env, verbose=1)
+                #, ent_coef=0.05, vf_coef=1.0, gae_lambda=0.9)
 
     model.learn(total_timesteps=args.train_for, callback=icm_callback)
     

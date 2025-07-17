@@ -1,12 +1,14 @@
-# babybench_icm/icm/forward.py
+# babybench_selftouch/icm/forward.py
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+# --- NEW: Import the custom loss function ---
+from .losses import sigma_vae_loss
 
 class ForwardModel(nn.Module):
     """
-    ICM正向模型：(z_t, a_t) -> z_{t+1}_pred
+    ICM Forward Model: (z_t, a_t) -> z_{t+1}_pred
     """
     def __init__(self, latent_dim, action_dim, hidden_dim=256):
         super().__init__()
@@ -19,4 +21,5 @@ class ForwardModel(nn.Module):
         return self.fc2(h)
 
     def compute_loss(self, z_pred, z_next):
-        return F.mse_loss(z_pred, z_next, reduction='mean')
+        # --- MODIFIED: Use sigma_vae_loss instead of F.mse_loss ---
+        return sigma_vae_loss(z_pred, z_next)

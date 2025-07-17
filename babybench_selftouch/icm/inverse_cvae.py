@@ -1,12 +1,14 @@
-# babybench_icm/icm/inverse_cvae.py
+# babybench_selftouch/icm/inverse_cvae.py
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+# --- NEW: Import the custom loss function ---
+from .losses import sigma_vae_loss
 
 class InverseCVAE(nn.Module):
     """
-    条件VAE逆模型，建模状态对->动作分布
+    Conditional VAE Inverse Model, models state pair -> action distribution
     """
     def __init__(self, latent_dim, action_dim, hidden_dim=256):
         super().__init__()
@@ -40,7 +42,9 @@ class InverseCVAE(nn.Module):
         return a_pred, mu, logvar, z
 
     def compute_loss(self, a_pred, a_true, mu, logvar, beta=1.0):
-        recon_loss = F.mse_loss(a_pred, a_true, reduction='mean')
+        # --- MODIFIED: Use sigma_vae_loss instead of F.mse_loss ---
+        recon_loss = sigma_vae_loss(a_pred, a_true)
+        
         kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / a_true.shape[0]
         total_loss = recon_loss + beta * kl_loss
         return total_loss, recon_loss, kl_loss

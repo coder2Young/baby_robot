@@ -1,12 +1,14 @@
-# babybench_icm/icm/vae.py
+# babybench_selftouch/icm/vae.py
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+# --- NEW: Import the custom loss function ---
+from .losses import sigma_vae_loss
 
 class VAE(nn.Module):
     """
-    变分自编码器：状态编码器/解码器
+    Variational Autoencoder: State Encoder/Decoder
     """
     def __init__(self, obs_dim, latent_dim, hidden_dim=256):
         super().__init__()
@@ -38,7 +40,9 @@ class VAE(nn.Module):
         return recon_x, mu, logvar, z
 
     def compute_loss(self, x, recon_x, mu, logvar, beta=1.0):
-        recon_loss = F.mse_loss(recon_x, x, reduction='mean')
+        # --- MODIFIED: Use sigma_vae_loss instead of F.mse_loss ---
+        recon_loss = sigma_vae_loss(recon_x, x)
+        
         kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.shape[0]
         total_loss = recon_loss + beta * kl_loss
         return total_loss, recon_loss, kl_loss
