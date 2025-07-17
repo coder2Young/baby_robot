@@ -4,21 +4,43 @@ import os
 import torch
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.vec_env import VecEnv
+
+# Import necessary components
 from babybench_selftouch.selftouch_wrapper import flatten_obs, torchify 
 from babybench_selftouch.icm.icm_module import ICMModule
 
 
 class ICMCallback(BaseCallback):
     """
-    A custom callback for ICM integration.
-    1. Calculates ICM curiosity reward at each step.
+    A custom callback for ICM integration with advanced features:
+    1. Calculates ICM curiosity reward at each step with a DYNAMICALLY annealed weight.
     2. Triggers batch training of the ICM model at the end of each rollout.
     3. Periodically saves model checkpoints.
+    4. Dynamically adjusts the touch reward weight in the environment wrapper.
     """
-    def __init__(self, icm_module: ICMModule, save_path: str, save_freq: int = 100000, lambda_icm: float = 0.5, n_epochs: int = 4, batch_size: int = 256, verbose: int = 0):
+    def __init__(self, 
+                 icm_module: ICMModule,
+                 total_training_steps: int,
+                 save_path: str, 
+                 save_freq: int = 100000, 
+                 lambda_icm_schedule: tuple = (0.5, 5.0),
+                 lambda_touch_schedule: tuple = (10.0, 1.0),
+                 n_epochs: int = 4, 
+                 batch_size: int = 256, 
+                 verbose: int = 0):
         super().__init__(verbose)
         self.icm = icm_module
-        self.lambda_icm = lambda_icm
+        self.total_training_steps = total_training_steps
+        
+        # --- NEW: Store schedule parameters ---
+        self.lambda_icm_start, self.lambda_icm_end = lambda_icm_schedule
+        self.lambda_touch_start, self.lambda_touch_end = lambda_touch_schedule
+
+        # Initialize current lambda_icm with the starting value
+        self.lambda_icm = self.lambda_icm_start
+
+        # Other parameters remain
         self.n_epochs = n_epochs
         self.batch_size = batch_size
         self.save_path = save_path
@@ -28,6 +50,26 @@ class ICMCallback(BaseCallback):
         """
         This method is called after each step in the environment.
         """
+        # --- NEW: DYNAMIC WEIGHTING LOGIC ---
+        # Calculate current training progress (from 0.0 to 1.0)
+        progress = min(1.0, self.num_timesteps / self.total_training_steps)
+        
+        # Linearly interpolate the weights based on the progress
+        current_lambda_icm = self.lambda_icm_start + (self.lambda_icm_end - self.lambda_icm_start) * progress
+        current_lambda_touch = self.lambda_touch_start + (self.lambda_touch_end - self.lambda_touch_start) * progress
+
+        # Update the weights for the current step's reward calculation
+        self.lambda_icm = current_lambda_icm
+        # Use set_attr to safely change the attribute in the vectorized environment wrapper
+        self.training_env.set_attr('lambda_touch', current_lambda_touch)
+
+        # Log the dynamic weights to TensorBoard for monitoring
+        self.logger.record('lambdas/icm_weight', self.lambda_icm)
+        self.logger.record('lambdas/touch_weight', current_lambda_touch)
+        
+        # --- The rest of the logic continues below ---
+
+        # Periodic saving logic (remains the same)
         if self.num_timesteps > 0 and self.num_timesteps % self.save_freq == 0:
             if self.verbose > 0:
                 print(f"\n--- Saving models at step {self.num_timesteps} ---")
@@ -45,6 +87,7 @@ class ICMCallback(BaseCallback):
                 print(f"PPO model saved to {ppo_path}")
                 print(f"ICM model saved to {icm_path}\n")
 
+        # ICM Reward calculation logic (remains the same, but uses the new self.lambda_icm)
         current_pos = self.model.rollout_buffer.pos
         last_obs_dict = {
             key: obs_array[current_pos] 
@@ -64,9 +107,6 @@ class ICMCallback(BaseCallback):
             flat_action = torchify(action_single, self.icm.device)
             flat_next_obs = torchify(flatten_obs(new_obs_single), self.icm.device)
 
-            # --- CORRECTED: Reward is now ONLY from the forward model loss ---
-            # We call compute_forward_loss to get the normalized prediction error.
-            # We no longer need to call compute_inverse_loss here.
             norm_fwd_loss, _ = self.icm.compute_forward_loss(flat_obs, flat_action, flat_next_obs, update_ema=True)
             icm_reward = norm_fwd_loss
             icm_rewards.append(icm_reward)
@@ -85,16 +125,15 @@ class ICMCallback(BaseCallback):
         
         buffer = self.model.rollout_buffer
         
-        # Slicing to get N-1 valid transitions
         obs_t_list = [
              {k: v[step, env_idx] for k, v in buffer.observations.items()}
             for env_idx in range(buffer.n_envs)
-            for step in range(buffer.buffer_size -1)
+            for step in range(buffer.buffer_size - 1)
         ]
         next_obs_t_list = [
              {k: v[step + 1, env_idx] for k, v in buffer.observations.items()}
             for env_idx in range(buffer.n_envs)
-            for step in range(buffer.buffer_size -1)
+            for step in range(buffer.buffer_size - 1)
         ]
         actions_t_sliced = buffer.actions[:-1].reshape(-1, buffer.action_space.shape[0])
 

@@ -10,7 +10,7 @@ class TouchRewardWrapper(gym.Wrapper):
     "Reward Window with Cooldown" mechanism for general touches, and a
     separate "Event-Based Bonus with Cooldown" for special hand touches.
     """
-    def __init__(self, env, reward_module, reward_window_duration=25, cooldown_period=50, hand_bonus_cooldown_period=100, lambda_touch=100.0, lambda_hand_touch=0.5, touch_threshold=1e-6):
+    def __init__(self, env, reward_module, reward_window_duration=25, cooldown_period=50, hand_bonus_cooldown_period=20, lambda_touch=100.0, lambda_hand_touch=0.5, touch_threshold=1e-6):
         super().__init__(env)
         self.reward_mod = reward_module
         self.lambda_touch = lambda_touch
