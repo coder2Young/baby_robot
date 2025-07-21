@@ -14,7 +14,10 @@ class TouchRewardWrapper(gym.Wrapper):
                  # General touch parameters
                  general_reward_window=80, general_cooldown_period=100, 
                  # Hand-specific touch parameters
+                 hand_reward_value=5,
                  hand_reward_window=200, hand_cooldown_period=40,
+                 hand_overhold_threshold=25, 
+                 hand_overhold_penalty=1.0, 
                  # Reward scaling parameters
                  lambda_touch=50.0, lambda_hand_touch=200.0, 
                  touch_threshold=1e-6,
@@ -29,8 +32,12 @@ class TouchRewardWrapper(gym.Wrapper):
         # Store separate timing parameters for hands vs. other body parts
         self.general_reward_window = general_reward_window
         self.general_cooldown_period = general_cooldown_period
+
+        self.hand_reward_value = hand_reward_value
         self.hand_reward_window = hand_reward_window
         self.hand_cooldown_period = hand_cooldown_period
+        self.hand_overhold_threshold = hand_overhold_threshold
+        self.hand_overhold_penalty = hand_overhold_penalty
         
         # State trackers for the wrapper
         num_parts = self.env.observation_space['touch'].shape[0]
@@ -92,7 +99,10 @@ class TouchRewardWrapper(gym.Wrapper):
                 
                 if part_idx in self.hand_parts_indices:
                     if 0 < duration <= self.hand_reward_window:
-                        hand_touch_reward += 1.0 # Fixed bonus for each eligible hand part
+                        normalized_duration = duration / self.hand_reward_window
+                        hand_touch_reward += self.hand_reward_value * np.sqrt(normalized_duration)
+                    elif duration > self.hand_overhold_threshold:
+                        hand_touch_reward -= self.hand_overhold_penalty
                 else: # This is a non-hand body part
                     if 0 < duration <= self.general_reward_window:
                         # Use the map to get the correct local index for the reward module
@@ -113,6 +123,7 @@ class TouchRewardWrapper(gym.Wrapper):
         
         # --- Final reward calculation with separate lambdas ---
         total_reward = extrinsic_reward + self.lambda_touch * touch_reward + self.lambda_hand_touch * hand_touch_reward
+        
 
         if "reward_components" not in info:
             info["reward_components"] = {}

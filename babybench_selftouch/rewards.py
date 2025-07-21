@@ -43,7 +43,7 @@ class SoftmaxTouchReward:
         denominator = np.sum(exp_neg_counts)
         probs = exp_neg_counts / (denominator + 1e-8) 
         
-        rewards = self.total_reward * probs
+        rewards = self.total_reward * (probs * self.num_parts)
         
         return rewards
 

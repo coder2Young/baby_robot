@@ -17,6 +17,9 @@ from babybench_selftouch.rewards import SoftmaxTouchReward
 from babybench_selftouch.selftouch_wrapper import TouchRewardWrapper
 from babybench_selftouch.icm_callback import ICMCallback
 from babybench_selftouch.utils import flatten_obs # 假设您已采纳重构建议
+LAMBDA_ICM_SCHEDULE = (0.1, 1.0)
+LAMBDA_TOUCH_SCHEDULE = (0.1, 0.05)
+LAMBDA_HAND_TOUCH_SCHEDULE = (2.0, 1.5)
 
 def main():
     """
@@ -25,7 +28,7 @@ def main():
     # === 1. 配置与参数解析 ===
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='babybench_selftouch/config_selftouch.yml', type=str)
-    parser.add_argument('--train_for', default=500000, type=int)
+    parser.add_argument('--train_for', default=1000000, type=int)
     args = parser.parse_args()
     with open(args.config) as f:
         config = yaml.safe_load(f)
@@ -44,21 +47,24 @@ def main():
     body_idx_map = {full_idx: reduced_idx for reduced_idx, full_idx in enumerate(body_parts_indices_list)}
 
     # 初始化多样性奖励模块，它只管理非手部
-    reward_mod = SoftmaxTouchReward(num_parts=num_body_parts, tau=1.3, total_reward=2.0)
+    reward_mod = SoftmaxTouchReward(num_parts=num_body_parts, tau=2.0, total_reward=1)
     
     # --- 将所有功能包裹到最终的环境中 ---
     wrapped_env = TouchRewardWrapper(
         env, 
         reward_module=reward_mod,
         body_idx_map=body_idx_map,
-        general_reward_window=80,
-        general_cooldown_period=100,
-        hand_reward_window=200,
-        hand_cooldown_period=40,
-        lambda_touch=10.0,
-        lambda_hand_touch=20.0
+        general_reward_window=30,
+        general_cooldown_period=30,
+        hand_reward_value=10,
+        hand_reward_window=20,
+        hand_cooldown_period=20,
+        hand_overhold_threshold=25,  # 手部过度触摸阈值
+        hand_overhold_penalty=0.2,  # 手部过度触摸
+        lambda_touch=LAMBDA_TOUCH_SCHEDULE[0],  # 初始触摸奖励权重
+        lambda_hand_touch=LAMBDA_HAND_TOUCH_SCHEDULE[0],  # 初始手部触摸奖励权重
     )
-
+    
     # === 3. 计算真实维度并初始化ICM和Callback ===
     # 通过一次reset获取真实观测样本，确保维度准确无误
     obs, _ = wrapped_env.reset()
@@ -73,10 +79,10 @@ def main():
         icm_module=icm,
         total_training_steps=args.train_for,
         save_path=config['save_dir'],
-        save_freq=50000,
-        lambda_icm_schedule=(5.0, 50.0),
-        lambda_touch_schedule=(10.0, 1.0),
-        lambda_hand_touch_schedule=(20.0, 10.0),
+        save_freq=20000,
+        lambda_icm_schedule=LAMBDA_ICM_SCHEDULE,
+        lambda_touch_schedule=LAMBDA_TOUCH_SCHEDULE,
+        lambda_hand_touch_schedule=LAMBDA_HAND_TOUCH_SCHEDULE,
         n_epochs=8,
         batch_size=512,
         verbose=1
@@ -88,9 +94,8 @@ def main():
         "MultiInputPolicy", 
         wrapped_env, 
         verbose=1,
-        ent_coef=0.05,
-        vf_coef=1.0,
-        gae_lambda=0.95
+        ent_coef=0.1,
+        n_steps=4096
     )
 
     # === 5. 开始训练 ===
