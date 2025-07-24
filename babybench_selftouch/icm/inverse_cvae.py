@@ -23,6 +23,7 @@ class InverseCVAE(nn.Module):
         h = F.relu(self.enc_fc1(x))
         mu = self.enc_mu(h)
         logvar = self.enc_logvar(h)
+        logvar = torch.clamp(logvar, min=-10, max=10)
         return mu, logvar
 
     def reparameterize(self, mu, logvar):

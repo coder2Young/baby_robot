@@ -22,6 +22,7 @@ class VAE(nn.Module):
         h = F.relu(self.fc1(x))
         mu = self.fc_mu(h)
         logvar = self.fc_logvar(h)
+        logvar = torch.clamp(logvar, min=-10, max=10)
         return mu, logvar
 
     def reparameterize(self, mu, logvar):
