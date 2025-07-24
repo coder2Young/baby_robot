@@ -47,20 +47,20 @@ def main():
     body_idx_map = {full_idx: reduced_idx for reduced_idx, full_idx in enumerate(body_parts_indices_list)}
 
     # 初始化多样性奖励模块，它只管理非手部
-    reward_mod = SoftmaxTouchReward(num_parts=num_body_parts, tau=2.0, total_reward=1)
+    reward_mod = SoftmaxTouchReward(num_parts=num_body_parts, tau=12.0, total_reward=1)
     
     # --- 将所有功能包裹到最终的环境中 ---
     wrapped_env = TouchRewardWrapper(
         env, 
         reward_module=reward_mod,
         body_idx_map=body_idx_map,
-        general_reward_window=30,
+        general_reward_window=50,
         general_cooldown_period=30,
         hand_reward_value=10,
         hand_reward_window=20,
         hand_cooldown_period=20,
-        hand_overhold_threshold=25,  # 手部过度触摸阈值
-        hand_overhold_penalty=0.2,  # 手部过度触摸
+        hand_overhold_threshold=60,  # 手部过度触摸阈值
+        hand_overhold_penalty=1,  # 手部过度触摸
         lambda_touch=LAMBDA_TOUCH_SCHEDULE[0],  # 初始触摸奖励权重
         lambda_hand_touch=LAMBDA_HAND_TOUCH_SCHEDULE[0],  # 初始手部触摸奖励权重
     )
@@ -94,7 +94,7 @@ def main():
         "MultiInputPolicy", 
         wrapped_env, 
         verbose=1,
-        ent_coef=0.1,
+        ent_coef=0.001,
         n_steps=4096
     )
 
