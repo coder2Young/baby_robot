@@ -17,9 +17,10 @@ from babybench_selftouch.rewards import SoftmaxTouchReward
 from babybench_selftouch.selftouch_wrapper import TouchRewardWrapper
 from babybench_selftouch.icm_callback import ICMCallback
 from babybench_selftouch.utils import flatten_obs # 假设您已采纳重构建议
-LAMBDA_ICM_SCHEDULE = (0.1, 1.0)
+
+LAMBDA_ICM_SCHEDULE = (0.4, 10.0)
 LAMBDA_TOUCH_SCHEDULE = (0.1, 0.05)
-LAMBDA_HAND_TOUCH_SCHEDULE = (2.0, 1.5)
+LAMBDA_HAND_TOUCH_SCHEDULE = (2.0, 1.0)
 
 def main():
     """
@@ -47,15 +48,15 @@ def main():
     body_idx_map = {full_idx: reduced_idx for reduced_idx, full_idx in enumerate(body_parts_indices_list)}
 
     # 初始化多样性奖励模块，它只管理非手部
-    reward_mod = SoftmaxTouchReward(num_parts=num_body_parts, tau=12.0, total_reward=1)
+    reward_mod = SoftmaxTouchReward(num_parts=num_body_parts, tau=2.0, total_reward=1)
     
     # --- 将所有功能包裹到最终的环境中 ---
     wrapped_env = TouchRewardWrapper(
         env, 
         reward_module=reward_mod,
         body_idx_map=body_idx_map,
-        general_reward_window=50,
-        general_cooldown_period=30,
+        general_reward_window=30,
+        general_cooldown_period=200,
         hand_reward_value=10,
         hand_reward_window=20,
         hand_cooldown_period=20,
@@ -72,7 +73,7 @@ def main():
     action_dim = wrapped_env.action_space.shape[0]
 
     # 初始化ICM模块
-    icm = ICMModule(obs_dim=actual_obs_dim, action_dim=action_dim, latent_dim=64, hidden_dim=512, lr=1e-3)
+    icm = ICMModule(obs_dim=actual_obs_dim, action_dim=action_dim, latent_dim=16, hidden_dim=512, lr=3e-4)
 
     # 初始化Callback，传入所有调度参数
     icm_callback = ICMCallback(
@@ -94,7 +95,7 @@ def main():
         "MultiInputPolicy", 
         wrapped_env, 
         verbose=1,
-        ent_coef=0.001,
+        ent_coef=0.1, # Keep it high to encourage exploration
         n_steps=4096
     )
 
