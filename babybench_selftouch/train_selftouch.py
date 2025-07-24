@@ -7,7 +7,6 @@ import torch
 import numpy as np
 from stable_baselines3 import PPO
 
-# --- 项目模块导入 ---
 import sys
 sys.path.append(".")
 sys.path.append("..")
@@ -16,11 +15,11 @@ from babybench_selftouch.icm.icm_module import ICMModule
 from babybench_selftouch.rewards import SoftmaxTouchReward
 from babybench_selftouch.selftouch_wrapper import TouchRewardWrapper
 from babybench_selftouch.icm_callback import ICMCallback
-from babybench_selftouch.utils import flatten_obs # 假设您已采纳重构建议
+from babybench_selftouch.utils import flatten_obs
 
-LAMBDA_ICM_SCHEDULE = (0.5, 10.0)
-LAMBDA_TOUCH_SCHEDULE = (0.1, 0.005)
-LAMBDA_HAND_TOUCH_SCHEDULE = (2.0, 0.01)
+LAMBDA_ICM_SCHEDULE = (0.25, 5.0)
+LAMBDA_TOUCH_SCHEDULE = (0.1, 0.01)
+LAMBDA_HAND_TOUCH_SCHEDULE = (2.0, 0.2)
 
 def main():
     """
@@ -55,12 +54,12 @@ def main():
         env, 
         reward_module=reward_mod,
         body_idx_map=body_idx_map,
-        general_reward_window=30,
-        general_cooldown_period=200,
+        general_reward_window=60,
+        general_cooldown_period=600,
         hand_reward_value=10,
-        hand_reward_window=20,
-        hand_cooldown_period=20,
-        hand_overhold_threshold=60,  # 手部过度触摸阈值
+        hand_reward_window=120,
+        hand_cooldown_period=30,
+        hand_overhold_threshold=300,  # 手部过度触摸阈值
         hand_overhold_penalty=1,  # 手部过度触摸
         lambda_touch=LAMBDA_TOUCH_SCHEDULE[0],  # 初始触摸奖励权重
         lambda_hand_touch=LAMBDA_HAND_TOUCH_SCHEDULE[0],  # 初始手部触摸奖励权重
@@ -96,7 +95,7 @@ def main():
         wrapped_env, 
         verbose=1,
         ent_coef=0.1, # Keep it high to encourage exploration
-        n_steps=4096
+        n_steps=1024
     )
 
     # === 5. 开始训练 ===
