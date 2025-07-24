@@ -56,7 +56,8 @@ class ICMModule(nn.Module):
             self.forward_loss_ema = self.ema_alpha * self.forward_loss_ema + (1 - self.ema_alpha) * loss.item()
         
         norm_loss = loss.item() / (self.forward_loss_ema + 1e-8)
-        norm_loss = min(max(norm_loss, 0.0), 1.0)
+        # norm_loss = min(max(norm_loss, 0.0), 1.0)
+        norm_loss = max(norm_loss, 0.0) 
         return norm_loss, loss
 
     def compute_inverse_loss(self, obs, next_obs, action, update_ema=True):
