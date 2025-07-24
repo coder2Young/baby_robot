@@ -18,9 +18,9 @@ from babybench_selftouch.selftouch_wrapper import TouchRewardWrapper
 from babybench_selftouch.icm_callback import ICMCallback
 from babybench_selftouch.utils import flatten_obs # 假设您已采纳重构建议
 
-LAMBDA_ICM_SCHEDULE = (0.4, 10.0)
-LAMBDA_TOUCH_SCHEDULE = (0.1, 0.05)
-LAMBDA_HAND_TOUCH_SCHEDULE = (2.0, 1.0)
+LAMBDA_ICM_SCHEDULE = (0.5, 10.0)
+LAMBDA_TOUCH_SCHEDULE = (0.1, 0.005)
+LAMBDA_HAND_TOUCH_SCHEDULE = (2.0, 0.01)
 
 def main():
     """
@@ -29,7 +29,7 @@ def main():
     # === 1. 配置与参数解析 ===
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='babybench_selftouch/config_selftouch.yml', type=str)
-    parser.add_argument('--train_for', default=1000000, type=int)
+    parser.add_argument('--train_for', default=1500000, type=int)
     args = parser.parse_args()
     with open(args.config) as f:
         config = yaml.safe_load(f)

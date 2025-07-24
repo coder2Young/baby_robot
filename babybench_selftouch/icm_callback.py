@@ -113,7 +113,8 @@ class ICMCallback(BaseCallback):
         un_smoothed_total_reward = touch_components_reward + weighted_icm_step_reward
 
         # 3d. Apply logarithmic scaling to the final total reward to smooth it
-        smoothed_reward = np.sign(un_smoothed_total_reward) * np.log1p(np.abs(un_smoothed_total_reward))
+        #smoothed_reward = np.sign(un_smoothed_total_reward) * np.log1p(np.abs(un_smoothed_total_reward))
+        smoothed_reward = un_smoothed_total_reward
 
         # 3e. Overwrite the rewards in `locals` with the smoothed version for the PPO update
         self.locals['rewards'][:] = smoothed_reward
