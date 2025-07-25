@@ -100,7 +100,7 @@ class TouchRewardWrapper(gym.Wrapper):
                 if part_idx in self.hand_parts_indices:
                     if 0 < duration <= self.hand_reward_window:
                         normalized_duration = duration / self.hand_reward_window
-                        hand_touch_reward += self.hand_reward_value * np.sqrt(normalized_duration)
+                        hand_touch_reward += self.hand_reward_value
                     elif duration > self.hand_overhold_threshold:
                         hand_touch_reward -= self.hand_overhold_penalty
                 else: # This is a non-hand body part

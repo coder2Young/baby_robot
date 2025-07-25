@@ -111,7 +111,7 @@ class ICMModule(nn.Module):
                 forward_loss = self.forward_model.compute_loss(z_pred, z_next)
 
                 a_pred, mu_z, logvar_z, _ = self.inverse_cvae(z, z_next, actions)
-                inverse_total_loss, inverse_recon_loss, inverse_kl_loss = self.inverse_cvae.compute_loss(a_pred, actions, mu_z, logvar_z)
+                inverse_total_loss, inverse_recon_loss, inverse_kl_loss = self.inverse_cvae.compute_loss(a_pred, actions, mu_z, logvar_z, beta=5.0)
 
                 # --- CORRECTED: Apply weighted loss scheme based on ICM Paper ---
                 icm_dynamics_loss = (1 - beta_icm) * inverse_total_loss + beta_icm * forward_loss
