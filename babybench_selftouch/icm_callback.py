@@ -187,7 +187,7 @@ class ICMCallback(BaseCallback):
             log_str += f"  Proprio VAE(R/KL): {final_losses['proprio_vae_recon_loss']:.4f}/{final_losses['proprio_vae_kl_loss']:.4f} | "
             log_str += f"Touch VAE(R/KL): {final_losses['touch_vae_recon_loss']:.4f}/{final_losses['touch_vae_kl_loss']:.4f}\n"
             log_str += f"  Forward Loss: {final_losses['forward_loss']:.4f} | "
-            log_str += f"Inverse(R/KL): {final_losses['inverse_recon_loss']:.4f}/{final_losses['inverse_kl_loss']:.4f}"
+            #log_str += f"Inverse(R/KL): {final_losses['inverse_recon_loss']:.4f}/{final_losses['inverse_kl_loss']:.4f}"
             print(log_str)
         
         # Log all new loss components to TensorBoard

@@ -91,7 +91,7 @@ class ICMModule(nn.Module):
         dataset_size = proprio_batch.shape[0]
         final_epoch_losses = {}
         
-        beta_icm = 0.2
+        beta_icm = 1.0 # Disable inverse model now
         w_proprio_vae = 1.0
         w_touch_vae = 5.0
         w_icm = 1.0
