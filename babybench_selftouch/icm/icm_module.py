@@ -24,10 +24,20 @@ class ICMModule(nn.Module):
                  touch_latent_dim=2, 
                  hidden_dim=256, 
                  lr=1e-4, 
-                 device='cpu'):
+                 device='none',
+                 vae_beta: float = 1.0):
         super().__init__()
         
+        # If no device is specified, use the cuda, then mps, then cpu
+        if device == 'none':
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+            elif torch.backends.mps.is_available():
+                device = torch.device("mps")
+            else:
+                device = torch.device("cpu")
         self.device = device
+        self.vae_beta = vae_beta
         self.proprio_latent_dim = proprio_latent_dim
         self.touch_latent_dim = touch_latent_dim
         combined_latent_dim = proprio_latent_dim + touch_latent_dim
@@ -102,7 +112,7 @@ class ICMModule(nn.Module):
                 'proprio_vae_recon_loss': [], 'proprio_vae_kl_loss': [], 
                 'touch_vae_recon_loss': [], 'touch_vae_kl_loss': [],
                 'forward_loss': [],
-                'inverse_nll_loss': [] # Changed from recon/kl to a single NLL loss
+                #'inverse_nll_loss': [] # Changed from recon/kl to a single NLL loss
             }
             permutation = torch.randperm(dataset_size).to(self.device)
             
@@ -115,8 +125,8 @@ class ICMModule(nn.Module):
                 (z_combined, 
                  (proprio_recon, p_mu, p_logvar), 
                  (touch_recon, t_mu, t_logvar)) = self._encode_and_combine(proprio, touch)
-                proprio_vae_total_loss, p_recon_loss, p_kl_loss = self.proprio_vae.compute_loss(proprio, proprio_recon, p_mu, p_logvar)
-                touch_vae_total_loss, t_recon_loss, t_kl_loss = self.touch_vae.compute_loss(touch, touch_recon, t_mu, t_logvar)
+                proprio_vae_total_loss, p_recon_loss, p_kl_loss = self.proprio_vae.compute_loss(proprio, proprio_recon, p_mu, p_logvar, beta=self.vae_beta)
+                touch_vae_total_loss, t_recon_loss, t_kl_loss = self.touch_vae.compute_loss(touch, touch_recon, t_mu, t_logvar, beta=self.vae_beta)
 
                 # 3. Encode next state for dynamics models
                 with torch.no_grad():
@@ -128,14 +138,15 @@ class ICMModule(nn.Module):
 
                 # --- MODIFIED: 5. Calculate Inverse Model loss using the new model ---
                 # The new model only takes the state transition as input. Detach z_next to stabilize.
-                mu_a, log_sigma_a = self.inverse_model(z_combined, z_next_combined.detach())
+                # mu_a, log_sigma_a = self.inverse_model(z_combined, z_next_combined.detach())
                 # The new loss is a simple Negative Log-Likelihood
-                inverse_nll_loss = self.inverse_model.compute_loss(mu_a, log_sigma_a, actions)
+                # inverse_nll_loss = self.inverse_model.compute_loss(mu_a, log_sigma_a, actions)
 
                 # 6. Combine all losses with weights
                 # --- MODIFIED: Use the new inverse_nll_loss ---
-                icm_dynamics_loss = (1 - beta_icm) * inverse_nll_loss + beta_icm * forward_loss
-                
+                #icm_dynamics_loss = (1 - beta_icm) * inverse_nll_loss + beta_icm * forward_loss
+                icm_dynamics_loss = forward_loss * beta_icm
+
                 total_loss = (w_proprio_vae * proprio_vae_total_loss) + \
                              (w_touch_vae * touch_vae_total_loss) + \
                              (w_icm * icm_dynamics_loss)
@@ -151,7 +162,7 @@ class ICMModule(nn.Module):
                 epoch_losses['touch_vae_kl_loss'].append(t_kl_loss.item())
                 epoch_losses['forward_loss'].append(forward_loss.item())
                 # --- MODIFIED: Log the new inverse_nll_loss ---
-                epoch_losses['inverse_nll_loss'].append(inverse_nll_loss.item())
+                #epoch_losses['inverse_nll_loss'].append(inverse_nll_loss.item())
 
             final_epoch_losses = {key: np.mean(val) for key, val in epoch_losses.items()}
         

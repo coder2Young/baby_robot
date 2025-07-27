@@ -18,9 +18,9 @@ from babybench_selftouch.icm_callback import ICMCallback
 # --- MODIFIED: flatten_obs is no longer needed ---
 # from babybench_selftouch.utils import flatten_obs
 
-LAMBDA_ICM_SCHEDULE = (0.2, 6.0)
-LAMBDA_TOUCH_SCHEDULE = (0.1, 0.01)
-LAMBDA_HAND_TOUCH_SCHEDULE = (10.0, 2.0)
+LAMBDA_ICM_SCHEDULE = (0.5, 8.0)
+LAMBDA_TOUCH_SCHEDULE = (0.05, 0.01)
+LAMBDA_HAND_TOUCH_SCHEDULE = (14.0, 2.0)
 
 def main():
     """
@@ -74,10 +74,11 @@ def main():
         proprio_obs_dim=proprio_obs_dim,
         touch_obs_dim=touch_obs_dim,
         action_dim=action_dim,
-        proprio_latent_dim=8,  # New hyperparameter
-        touch_latent_dim=8,    # New hyperparameter
+        proprio_latent_dim=16,  # New hyperparameter
+        touch_latent_dim=16,    # New hyperparameter
         hidden_dim=512,
-        lr=1e-3
+        lr=1e-3,
+        vae_beta=0.05
     )
 
     # 初始化Callback (Callback's initialization remains unchanged)
@@ -89,9 +90,9 @@ def main():
         lambda_icm_schedule=LAMBDA_ICM_SCHEDULE,
         lambda_touch_schedule=LAMBDA_TOUCH_SCHEDULE,
         lambda_hand_touch_schedule=LAMBDA_HAND_TOUCH_SCHEDULE,
-        n_epochs=8,
-        batch_size=256,
-        verbose=1
+        n_epochs=1,
+        batch_size=512,
+        verbose=2
     )
 
     # === 4. 初始化PPO模型 ===
@@ -101,7 +102,7 @@ def main():
         verbose=1,
         ent_coef=0.1,
         n_steps=1024,
-        learning_rate=1e-3
+        learning_rate=1e-3,
     )
 
     # === 5. 开始训练 ===

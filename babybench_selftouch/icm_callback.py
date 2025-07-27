@@ -48,13 +48,41 @@ class ICMCallback(BaseCallback):
         self.cumulative_hand_reward = 0.0
         self.cumulative_icm_reward = 0.0
 
+        # 1. 存储原始的起点和终点权重
+        self.lambda_icm_start, self.lambda_icm_end_unnormalized = lambda_icm_schedule
+        self.lambda_touch_start, self.lambda_touch_end_unnormalized = lambda_touch_schedule
+        self.lambda_hand_touch_start, self.lambda_hand_touch_end_unnormalized = lambda_hand_touch_schedule
+
+        # 2. 计算恒定的总权重 (基于起点)
+        self.total_weight = self.lambda_icm_start + self.lambda_touch_start + self.lambda_hand_touch_start
+        if self.verbose > 0:
+            print(f"Normalized reward weight activated. Constant Total Weight = {self.total_weight:.4f}")
+
+        # 3. 计算并归一化终点权重
+        end_weight_sum_unnormalized = self.lambda_icm_end_unnormalized + self.lambda_touch_end_unnormalized + self.lambda_hand_touch_end_unnormalized
+        
+        if end_weight_sum_unnormalized > 0:
+            normalization_factor = self.total_weight / end_weight_sum_unnormalized
+        else: # 避免除以零
+            normalization_factor = 0
+
+        self.lambda_icm_end = self.lambda_icm_end_unnormalized * normalization_factor
+        self.lambda_touch_end = self.lambda_touch_end_unnormalized * normalization_factor
+        self.lambda_hand_touch_end = self.lambda_hand_touch_end_unnormalized * normalization_factor
+
     def _on_step(self) -> bool:
         progress = min(1.0, self.num_timesteps / self.total_training_steps)
         
+        # --- 【关键修改】: 使用归一化后的终点权重进行插值 ---
         self.current_lambda_icm = self.lambda_icm_start + (self.lambda_icm_end - self.lambda_icm_start) * progress
         self.current_lambda_touch = self.lambda_touch_start + (self.lambda_touch_end - self.lambda_touch_start) * progress
         self.current_lambda_hand_touch = self.lambda_hand_touch_start + (self.lambda_hand_touch_end - self.lambda_hand_touch_start) * progress
-
+        
+        # --- 【新增修正】: 将动态计算的lambda值更新到环境装饰器中 ---
+        # VecEnv的set_attr方法可以为所有并行的环境实例设置属性
+        self.training_env.set_attr('lambda_touch', self.current_lambda_touch)
+        self.training_env.set_attr('lambda_hand_touch', self.current_lambda_hand_touch)
+        
         if self.num_timesteps > 0 and self.num_timesteps % self.save_freq == 0:
             if self.verbose > 0:
                 print(f"\n--- Saving models at step {self.num_timesteps} ---")
