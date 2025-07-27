@@ -6,6 +6,7 @@ import yaml
 import torch
 import numpy as np
 from stable_baselines3 import PPO
+import mujoco
 
 import sys
 sys.path.append(".")
@@ -20,7 +21,7 @@ from babybench_selftouch.icm_callback import ICMCallback
 
 LAMBDA_ICM_SCHEDULE = (0.5, 8.0)
 LAMBDA_TOUCH_SCHEDULE = (0.05, 0.01)
-LAMBDA_HAND_TOUCH_SCHEDULE = (14.0, 2.0)
+LAMBDA_HAND_TOUCH_SCHEDULE = (20.0, 2.0)
 
 def main():
     """
@@ -36,20 +37,23 @@ def main():
 
     # === 2. 创建并包裹环境 (简化流程) ===
     env = bb_utils.make_env(config)
-    
-    num_total_parts = env.observation_space['touch'].shape[0]
-    hand_parts_indices = {13, 14, 15, 19, 20, 21}
-    
-    body_parts_indices_list = sorted(list(set(range(num_total_parts)) - hand_parts_indices))
-    num_body_parts = len(body_parts_indices_list)
-    body_idx_map = {full_idx: reduced_idx for reduced_idx, full_idx in enumerate(body_parts_indices_list)}
 
-    reward_mod = SoftmaxTouchReward(num_parts=num_body_parts, tau=10.0, total_reward=1)
+    # --- 【关键修正】: 训练脚本只负责找出“手部”的Body ID ---
+    print("--- Automatically identifying hand BODY IDs ---")
+    hand_body_ids = set()
+    for body_id in range(env.model.nbody):
+        body_name = mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_BODY, body_id)
+        #if body_name and ('hand' in body_name or 'fingers' in body_name):
+        if body_name and 'hand' in body_name:
+            hand_body_ids.add(body_id)
+    print(f"Identified hand body IDs: {hand_body_ids}")
+    print("---------------------------------------------")
+
+    reward_mod = SoftmaxTouchReward(num_parts=1, tau=10.0, total_reward=1)
     
     wrapped_env = TouchRewardWrapper(
         env, 
         reward_module=reward_mod,
-        body_idx_map=body_idx_map,
         general_reward_window=60,
         general_cooldown_period=600,
         hand_reward_value=1,
@@ -59,6 +63,7 @@ def main():
         hand_overhold_penalty=1,
         lambda_touch=LAMBDA_TOUCH_SCHEDULE[0],
         lambda_hand_touch=LAMBDA_HAND_TOUCH_SCHEDULE[0],
+        hand_body_ids=hand_body_ids # 正确地传递 hand_body_ids
     )
     
     # === 3. 计算真实维度并初始化ICM和Callback ===
@@ -77,7 +82,7 @@ def main():
         proprio_latent_dim=16,  # New hyperparameter
         touch_latent_dim=16,    # New hyperparameter
         hidden_dim=512,
-        lr=1e-3,
+        lr=1e-5,
         vae_beta=0.05
     )
 
@@ -90,7 +95,7 @@ def main():
         lambda_icm_schedule=LAMBDA_ICM_SCHEDULE,
         lambda_touch_schedule=LAMBDA_TOUCH_SCHEDULE,
         lambda_hand_touch_schedule=LAMBDA_HAND_TOUCH_SCHEDULE,
-        n_epochs=1,
+        n_epochs=2,
         batch_size=512,
         verbose=2
     )
@@ -101,7 +106,7 @@ def main():
         wrapped_env, 
         verbose=1,
         ent_coef=0.1,
-        n_steps=1024,
+        n_steps=1024 * 4,
         learning_rate=1e-3,
     )
 

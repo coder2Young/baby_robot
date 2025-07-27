@@ -21,7 +21,9 @@ class TouchRewardWrapper(gym.Wrapper):
                  # Reward scaling parameters
                  lambda_touch=50.0, lambda_hand_touch=200.0, 
                  touch_threshold=1e-6,
-                 body_idx_map=None):
+                 body_idx_map=None,
+                 hand_body_ids=None,
+                 num_parts=22):
         super().__init__(env)
         self.reward_mod = reward_module # This module now only manages non-hand parts
         self.body_idx_map = body_idx_map
@@ -39,14 +41,39 @@ class TouchRewardWrapper(gym.Wrapper):
         self.hand_overhold_threshold = hand_overhold_threshold
         self.hand_overhold_penalty = hand_overhold_penalty
         
-        # State trackers for the wrapper
-        num_parts = self.env.observation_space['touch'].shape[0]
-        self.hand_parts_indices = {13, 14, 15, 19, 20, 21}
-        self.body_parts_indices = set(range(num_parts)) - self.hand_parts_indices
+        # --- 【全新映射逻辑】 ---
+        # 1. 确定带传感器的身体部位的顺序和总数
+        self.sensor_body_ids = list(env.touch.sensor_positions.keys())
+        self.num_parts = len(self.sensor_body_ids)
+        self.body_id_to_idx = {body_id: i for i, body_id in enumerate(self.sensor_body_ids)}
+
+        # 2. 计算每个身体部位在 obs['touch'] 中的数据切片
+        self.sensor_slices = {}
+        current_idx = 0
+        # 假设每个传感器输出3个值 (force_vector)
+        for body_id in self.sensor_body_ids:
+            num_sensors_on_body = len(env.touch.sensor_positions[body_id])
+            num_values_for_body = num_sensors_on_body * 3 
+            self.sensor_slices[body_id] = slice(current_idx, current_idx + num_values_for_body)
+            current_idx += num_values_for_body
         
-        self.current_touch_durations = np.zeros(num_parts, dtype=np.int32)
-        self.touch_cooldown_timers = np.zeros(num_parts, dtype=np.int32)
+        # 3. 根据传入的 hand_body_ids 确定手部和身体的【内部索引】
+        self.hand_parts_indices = {self.body_id_to_idx[bid] for bid in hand_body_ids if bid in self.body_id_to_idx}
+        self.body_parts_indices = set(range(self.num_parts)) - self.hand_parts_indices
+        
+        # 4. 创建 body_idx_map 供 reward_mod 使用
+        # 它将非手部的全局索引映射到 reward_mod 的局部索引 (0 to N_body_parts-1)
+        body_indices_list_sorted = sorted(list(self.body_parts_indices))
+        self.body_idx_map = {global_idx: local_idx for local_idx, global_idx in enumerate(body_indices_list_sorted)}
+        
+        # --- 【关键修正】: 使用正确计算的 self.num_parts 来初始化数组 ---
+        self.current_touch_durations = np.zeros(self.num_parts, dtype=np.int32)
+        self.touch_cooldown_timers = np.zeros(self.num_parts, dtype=np.int32)
+        # ----------------------------------------------------------
         self.parts_in_contact_last_step = set()
+
+         # 使用正确的身体部位数量重新配置reward_mod
+        self.reward_mod.reconfigure(num_parts=len(self.body_parts_indices))
 
     def reset(self, **kwargs):
         """Resets the environment and all stateful trackers."""
@@ -67,10 +94,23 @@ class TouchRewardWrapper(gym.Wrapper):
 
         # 2. Identify all parts currently in physical contact.
         touched_array = obs['touch']
-        parts_in_contact_now = set(np.where(touched_array > self.touch_threshold)[0])
+         # --- 【关键修正】: 初始化为空集合，并删除旧的、错误的检测逻辑 ---
+        parts_in_contact_now = set()
+        # ----------------------------------------------------------
+
         
+        # --- 【全新触摸检测逻辑】 ---
+        for body_id in self.sensor_body_ids:
+            sensor_slice = self.sensor_slices[body_id]
+            sensor_readings = touched_array[sensor_slice]
+            
+            # 检查这个部位的任何传感器是否有读数
+            if np.any(sensor_readings > self.touch_threshold):
+                part_idx = self.body_id_to_idx[body_id]
+                parts_in_contact_now.add(part_idx)
+
         # 3. Update the continuous touch duration for each part.
-        is_in_contact_mask = np.zeros(self.current_touch_durations.shape[0], dtype=bool)
+        is_in_contact_mask = np.zeros(self.num_parts, dtype=bool)
         if parts_in_contact_now:
             is_in_contact_mask[list(parts_in_contact_now)] = True
         
