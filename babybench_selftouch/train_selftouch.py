@@ -15,7 +15,8 @@ from babybench_selftouch.icm.icm_module import ICMModule
 from babybench_selftouch.rewards import SoftmaxTouchReward
 from babybench_selftouch.selftouch_wrapper import TouchRewardWrapper
 from babybench_selftouch.icm_callback import ICMCallback
-from babybench_selftouch.utils import flatten_obs
+# --- MODIFIED: flatten_obs is no longer needed ---
+# from babybench_selftouch.utils import flatten_obs
 
 LAMBDA_ICM_SCHEDULE = (0.2, 6.0)
 LAMBDA_TOUCH_SCHEDULE = (0.1, 0.01)
@@ -34,22 +35,17 @@ def main():
         config = yaml.safe_load(f)
 
     # === 2. 创建并包裹环境 (简化流程) ===
-    # 直接创建基础环境，不再使用额外的函数包裹
     env = bb_utils.make_env(config)
     
-    # --- 准备多样性奖励模块 (SoftmaxTouchReward) ---
     num_total_parts = env.observation_space['touch'].shape[0]
     hand_parts_indices = {13, 14, 15, 19, 20, 21}
     
-    # 计算非手部身体部位的索引和数量
     body_parts_indices_list = sorted(list(set(range(num_total_parts)) - hand_parts_indices))
     num_body_parts = len(body_parts_indices_list)
     body_idx_map = {full_idx: reduced_idx for reduced_idx, full_idx in enumerate(body_parts_indices_list)}
 
-    # 初始化多样性奖励模块，它只管理非手部
     reward_mod = SoftmaxTouchReward(num_parts=num_body_parts, tau=10.0, total_reward=1)
     
-    # --- 将所有功能包裹到最终的环境中 ---
     wrapped_env = TouchRewardWrapper(
         env, 
         reward_module=reward_mod,
@@ -59,22 +55,32 @@ def main():
         hand_reward_value=1,
         hand_reward_window=120,
         hand_cooldown_period=30,
-        hand_overhold_threshold=300,  # 手部过度触摸阈值
-        hand_overhold_penalty=1,  # 手部过度触摸
-        lambda_touch=LAMBDA_TOUCH_SCHEDULE[0],  # 初始触摸奖励权重
-        lambda_hand_touch=LAMBDA_HAND_TOUCH_SCHEDULE[0],  # 初始手部触摸奖励权重
+        hand_overhold_threshold=300,
+        hand_overhold_penalty=1,
+        lambda_touch=LAMBDA_TOUCH_SCHEDULE[0],
+        lambda_hand_touch=LAMBDA_HAND_TOUCH_SCHEDULE[0],
     )
     
     # === 3. 计算真实维度并初始化ICM和Callback ===
-    # 通过一次reset获取真实观测样本，确保维度准确无误
     obs, _ = wrapped_env.reset()
-    actual_obs_dim = flatten_obs(obs).shape[0]
+    
+    # --- MODIFIED: Get separate dimensions for each modality ---
+    proprio_obs_dim = obs['observation'].shape[0]
+    touch_obs_dim = obs['touch'].shape[0]
     action_dim = wrapped_env.action_space.shape[0]
 
-    # 初始化ICM模块
-    icm = ICMModule(obs_dim=actual_obs_dim, action_dim=action_dim, latent_dim=16, hidden_dim=512, lr=1e-4)
+    # --- MODIFIED: Instantiate ICMModule with the new signature ---
+    icm = ICMModule(
+        proprio_obs_dim=proprio_obs_dim,
+        touch_obs_dim=touch_obs_dim,
+        action_dim=action_dim,
+        proprio_latent_dim=8,  # New hyperparameter
+        touch_latent_dim=8,    # New hyperparameter
+        hidden_dim=512,
+        lr=1e-3
+    )
 
-    # 初始化Callback，传入所有调度参数
+    # 初始化Callback (Callback's initialization remains unchanged)
     icm_callback = ICMCallback(
         icm_module=icm,
         total_training_steps=args.train_for,
@@ -89,12 +95,11 @@ def main():
     )
 
     # === 4. 初始化PPO模型 ===
-    # 直接将单一的、完整包裹的环境传递给PPO
     model = PPO(
         "MultiInputPolicy", 
         wrapped_env, 
         verbose=1,
-        ent_coef=0.1, # Keep it high to encourage exploration
+        ent_coef=0.1,
         n_steps=1024,
         learning_rate=1e-3
     )
