@@ -6,15 +6,16 @@ import torch.optim as optim
 import numpy as np
 from babybench_selftouch.icm.vae import VAE
 from babybench_selftouch.icm.forward import ForwardModel
-from babybench_selftouch.icm.inverse_cvae import InverseCVAE
+# --- MODIFIED: Import the new ProbabilisticInverseModel ---
+from babybench_selftouch.icm.probabilistic_inverse import ProbabilisticInverseModel
+
 
 class ICMModule(nn.Module):
     """
     ICM assembly, managing VAE, forward, and inverse models.
     --- MODIFIED ---
-    This version uses two separate VAEs for proprioception and touch modalities.
+    This version uses a stable ProbabilisticInverseModel instead of InverseCVAE.
     """
-    # --- MODIFIED: Updated __init__ signature ---
     def __init__(self, 
                  proprio_obs_dim, 
                  touch_obs_dim, 
@@ -31,70 +32,53 @@ class ICMModule(nn.Module):
         self.touch_latent_dim = touch_latent_dim
         combined_latent_dim = proprio_latent_dim + touch_latent_dim
 
-        # --- NEW: Instantiate two separate VAEs for each modality ---
         self.proprio_vae = VAE(proprio_obs_dim, proprio_latent_dim, hidden_dim).to(device)
         self.touch_vae = VAE(touch_obs_dim, touch_latent_dim, hidden_dim).to(device)
-
-        # --- MODIFIED: Forward and Inverse models now use the combined latent dimension ---
         self.forward_model = ForwardModel(combined_latent_dim, action_dim, hidden_dim).to(device)
-        self.inverse_cvae = InverseCVAE(combined_latent_dim, action_dim, hidden_dim).to(device)
         
-        # --- MODIFIED: Optimizer now includes parameters from both VAEs ---
+        # --- MODIFIED: Instantiate the new ProbabilisticInverseModel ---
+        self.inverse_model = ProbabilisticInverseModel(combined_latent_dim, action_dim, hidden_dim).to(device)
+        
+        # --- MODIFIED: Optimizer now includes parameters from the new inverse model ---
         all_params = list(self.proprio_vae.parameters()) + \
                      list(self.touch_vae.parameters()) + \
                      list(self.forward_model.parameters()) + \
-                     list(self.inverse_cvae.parameters())
+                     list(self.inverse_model.parameters()) # Updated from inverse_cvae
         self.optimizer = optim.Adam(all_params, lr=lr)
         
         self.forward_loss_ema = 1.0
-        self.inverse_loss_ema = 1.0
+        # self.inverse_loss_ema is no longer needed in the same way, but can be kept for consistency
         self.ema_alpha = 0.99
 
-    # --- NEW: Helper method to encode both modalities and combine latent states ---
     def _encode_and_combine(self, proprio_obs, touch_obs):
-        # This method is for internal use within the training loop
         proprio_recon, p_mu, p_logvar, z_proprio = self.proprio_vae(proprio_obs)
         touch_recon, t_mu, t_logvar, z_touch = self.touch_vae(touch_obs)
         z_combined = torch.cat([z_proprio, z_touch], dim=-1)
-        
-        # Return all components needed for loss calculation
         return (z_combined, 
                 (proprio_recon, p_mu, p_logvar), 
                 (touch_recon, t_mu, t_logvar))
 
-    # --- NEW: A version of encode_state for inference (e.g., reward calculation) ---
     def encode_states_for_inference(self, proprio_obs, touch_obs):
         self.eval()
         with torch.no_grad():
             p_mu, p_logvar = self.proprio_vae.encode(proprio_obs)
             z_proprio = self.proprio_vae.reparameterize(p_mu, p_logvar)
-
             t_mu, t_logvar = self.touch_vae.encode(touch_obs)
             z_touch = self.touch_vae.reparameterize(t_mu, t_logvar)
-        
         return torch.cat([z_proprio, z_touch], dim=-1)
 
-    # --- MODIFIED: This function now must receive split observations ---
     def compute_forward_loss(self, proprio_obs, touch_obs, action, next_proprio_obs, next_touch_obs, update_ema=True):
         self.eval()
         with torch.no_grad():
             z_combined = self.encode_states_for_inference(proprio_obs, touch_obs)
             z_next_combined = self.encode_states_for_inference(next_proprio_obs, next_touch_obs)
-
             z_pred = self.forward_model(z_combined, action)
             loss = self.forward_model.compute_loss(z_pred, z_next_combined)
-
         if update_ema:
             self.forward_loss_ema = self.ema_alpha * self.forward_loss_ema + (1 - self.ema_alpha) * loss.item()
-        
-        norm_loss = loss.item() / (self.forward_loss_ema + 1e-8)
-        norm_loss = max(norm_loss, 0.0) 
+        norm_loss = max(0.0, loss.item() / (self.forward_loss_ema + 1e-8))
         return norm_loss, loss
 
-    # --- MODIFIED: This function is removed as its logic is now part of train_on_batch. ---
-    # `compute_inverse_loss` is not used by the callback, so it can be removed for simplicity.
-
-    # --- MODIFIED: Major overhaul of the training logic ---
     def train_on_batch(self, 
                        proprio_batch, 
                        touch_batch, 
@@ -104,75 +88,70 @@ class ICMModule(nn.Module):
                        n_epochs=4, 
                        batch_size=256):
         self.train()
-        
         dataset_size = proprio_batch.shape[0]
         final_epoch_losses = {}
         
-        # --- NEW: Separate weights for each VAE's loss ---
         beta_icm = 0.2
         w_proprio_vae = 1.0
-        w_touch_vae = 5.0  # Give touch reconstruction a higher weight
+        w_touch_vae = 5.0
         w_icm = 1.0
         
         for epoch in range(n_epochs):
+            # --- MODIFIED: Updated keys for epoch_losses dictionary ---
             epoch_losses = {
                 'proprio_vae_recon_loss': [], 'proprio_vae_kl_loss': [], 
                 'touch_vae_recon_loss': [], 'touch_vae_kl_loss': [],
                 'forward_loss': [],
-                'inverse_recon_loss': [], 'inverse_kl_loss': []
+                'inverse_nll_loss': [] # Changed from recon/kl to a single NLL loss
             }
             permutation = torch.randperm(dataset_size).to(self.device)
             
             for i in range(0, dataset_size, batch_size):
                 indices = permutation[i : i + batch_size]
-                
-                # --- MODIFIED: Get mini-batches for all separate tensors ---
                 proprio, touch, actions = proprio_batch[indices], touch_batch[indices], action_batch[indices]
                 next_proprio, next_touch = next_proprio_batch[indices], next_touch_batch[indices]
 
-                # --- Loss Calculation ---
-                
-                # 1. Encode current state and get VAE components
+                # 1. & 2. VAE encoding and loss calculation (unchanged)
                 (z_combined, 
                  (proprio_recon, p_mu, p_logvar), 
                  (touch_recon, t_mu, t_logvar)) = self._encode_and_combine(proprio, touch)
-                
-                # 2. Calculate separate VAE losses
                 proprio_vae_total_loss, p_recon_loss, p_kl_loss = self.proprio_vae.compute_loss(proprio, proprio_recon, p_mu, p_logvar)
                 touch_vae_total_loss, t_recon_loss, t_kl_loss = self.touch_vae.compute_loss(touch, touch_recon, t_mu, t_logvar)
 
-                # 3. Encode next state for dynamics models (without getting loss components)
+                # 3. Encode next state for dynamics models
                 with torch.no_grad():
                     z_next_combined = self.encode_states_for_inference(next_proprio, next_touch)
                 
-                # 4. Calculate Forward Model loss
+                # 4. Calculate Forward Model loss (unchanged)
                 z_pred = self.forward_model(z_combined, actions)
-                forward_loss = self.forward_model.compute_loss(z_pred, z_next_combined.detach()) # Detach to avoid backprop through next state
+                forward_loss = self.forward_model.compute_loss(z_pred, z_next_combined.detach())
 
-                # 5. Calculate Inverse Model loss
-                a_pred, mu_z, logvar_z, _ = self.inverse_cvae(z_combined, z_next_combined, actions)
-                inverse_total_loss, inverse_recon_loss, inverse_kl_loss = self.inverse_cvae.compute_loss(a_pred, actions, mu_z, logvar_z, beta=5.0)
+                # --- MODIFIED: 5. Calculate Inverse Model loss using the new model ---
+                # The new model only takes the state transition as input. Detach z_next to stabilize.
+                mu_a, log_sigma_a = self.inverse_model(z_combined, z_next_combined.detach())
+                # The new loss is a simple Negative Log-Likelihood
+                inverse_nll_loss = self.inverse_model.compute_loss(mu_a, log_sigma_a, actions)
 
                 # 6. Combine all losses with weights
-                icm_dynamics_loss = (1 - beta_icm) * inverse_total_loss + beta_icm * forward_loss
+                # --- MODIFIED: Use the new inverse_nll_loss ---
+                icm_dynamics_loss = (1 - beta_icm) * inverse_nll_loss + beta_icm * forward_loss
                 
                 total_loss = (w_proprio_vae * proprio_vae_total_loss) + \
                              (w_touch_vae * touch_vae_total_loss) + \
                              (w_icm * icm_dynamics_loss)
 
-                # --- Backpropagation ---
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 self.optimizer.step()
                 
-                # --- MODIFIED: Append losses from both VAEs for logging ---
+                # Append losses for logging
                 epoch_losses['proprio_vae_recon_loss'].append(p_recon_loss.item())
                 epoch_losses['proprio_vae_kl_loss'].append(p_kl_loss.item())
                 epoch_losses['touch_vae_recon_loss'].append(t_recon_loss.item())
                 epoch_losses['touch_vae_kl_loss'].append(t_kl_loss.item())
                 epoch_losses['forward_loss'].append(forward_loss.item())
-                epoch_losses['inverse_recon_loss'].append(inverse_recon_loss.item())
-                epoch_losses['inverse_kl_loss'].append(inverse_kl_loss.item())
+                # --- MODIFIED: Log the new inverse_nll_loss ---
+                epoch_losses['inverse_nll_loss'].append(inverse_nll_loss.item())
 
             final_epoch_losses = {key: np.mean(val) for key, val in epoch_losses.items()}
         
