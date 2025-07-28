@@ -19,9 +19,9 @@ from babybench_selftouch.icm_callback import ICMCallback
 # --- MODIFIED: flatten_obs is no longer needed ---
 # from babybench_selftouch.utils import flatten_obs
 
-LAMBDA_ICM_SCHEDULE = (0.5, 8.0)
-LAMBDA_TOUCH_SCHEDULE = (0.05, 0.01)
-LAMBDA_HAND_TOUCH_SCHEDULE = (20.0, 2.0)
+LAMBDA_ICM_SCHEDULE = (0.4, 16.0)
+LAMBDA_TOUCH_SCHEDULE = (10.0, 1.0)
+LAMBDA_HAND_TOUCH_SCHEDULE = (40.0, 20.0)
 
 def main():
     """
@@ -58,11 +58,9 @@ def main():
         general_cooldown_period=600,
         hand_reward_value=1,
         hand_reward_window=120,
-        hand_cooldown_period=30,
+        hand_cooldown_period=60,
         hand_overhold_threshold=300,
         hand_overhold_penalty=1,
-        lambda_touch=LAMBDA_TOUCH_SCHEDULE[0],
-        lambda_hand_touch=LAMBDA_HAND_TOUCH_SCHEDULE[0],
         hand_body_ids=hand_body_ids # 正确地传递 hand_body_ids
     )
     
@@ -79,10 +77,10 @@ def main():
         proprio_obs_dim=proprio_obs_dim,
         touch_obs_dim=touch_obs_dim,
         action_dim=action_dim,
-        proprio_latent_dim=16,  # New hyperparameter
-        touch_latent_dim=16,    # New hyperparameter
+        proprio_latent_dim=64,  # New hyperparameter
+        touch_latent_dim=24,    # New hyperparameter
         hidden_dim=512,
-        lr=1e-5,
+        lr=3e-4,
         vae_beta=0.05
     )
 
@@ -107,7 +105,7 @@ def main():
         verbose=1,
         ent_coef=0.1,
         n_steps=1024 * 4,
-        learning_rate=1e-3,
+        learning_rate=3e-4,
     )
 
     # === 5. 开始训练 ===
