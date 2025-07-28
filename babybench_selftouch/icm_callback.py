@@ -169,19 +169,17 @@ class ICMCallback(BaseCallback):
         self.current_lambda_icm = self.lambda_icm_start + (self.lambda_icm_end - self.lambda_icm_start) * progress
         self.current_lambda_touch = self.lambda_touch_start + (self.lambda_touch_end - self.lambda_touch_start) * progress
         self.current_lambda_hand_touch = self.lambda_hand_touch_start + (self.lambda_hand_touch_end - self.lambda_hand_touch_start) * progress
-        self.training_env.set_attr('lambda_touch', self.current_lambda_touch)
-        self.training_env.set_attr('lambda_hand_touch', self.current_lambda_hand_touch)
-
-        touch_components_reward = self.locals['rewards'].copy()
         
+        # 2. 从info字典中获取【未加权】的奖励分量
         info = self.locals['infos'][0]
+        unweighted_touch = 0.0
+        unweighted_hand = 0.0
         if 'reward_components' in info:
             rc = info['reward_components']
-            self.raw_touch_reward_sum += rc.get('unweighted_touch', 0.0)
-            self.raw_hand_reward_sum += rc.get('unweighted_hand', 0.0)
-            self.weighted_touch_reward_sum += rc.get('weighted_touch', 0.0)
-            self.weighted_hand_reward_sum += rc.get('weighted_hand', 0.0)
+            unweighted_touch = rc.get('unweighted_touch', 0.0)
+            unweighted_hand = rc.get('unweighted_hand', 0.0)
 
+        # 3. 计算【未加权】的ICM奖励
         last_obs_single = {k: v[0] for k, v in self.model._last_obs.items()}
         action_single = self.locals['actions'][0]
         new_obs_single = {k: v[0] for k, v in self.locals['new_obs'].items()}
@@ -190,15 +188,28 @@ class ICMCallback(BaseCallback):
         action_tensor = torchify(action_single, self.icm.device)
         next_p_obs = torchify(new_obs_single['observation'], self.icm.device)
         next_t_obs = torchify(new_obs_single['touch'], self.icm.device)
+        
         norm_fwd_loss, _ = self.icm.compute_forward_loss(
             p_obs, t_obs, action_tensor, next_p_obs, next_t_obs, update_ema=True
         )
+        
+        # 4. 在Callback中进行加权
+        weighted_touch = self.current_lambda_touch * unweighted_touch
+        weighted_hand = self.current_lambda_hand_touch * unweighted_hand
+        weighted_icm = self.current_lambda_icm * norm_fwd_loss
+        
+        # 5. 累积原始值和加权值用于日志记录
+        self.raw_touch_reward_sum += unweighted_touch
+        self.raw_hand_reward_sum += unweighted_hand
         self.raw_icm_reward_sum += norm_fwd_loss
         
-        weighted_icm_step_reward = self.current_lambda_icm * norm_fwd_loss
+        self.weighted_touch_reward_sum += weighted_touch
+        self.weighted_hand_reward_sum += weighted_hand
+        self.weighted_icm_reward_sum += weighted_icm
         
-        self.weighted_icm_reward_sum += weighted_icm_step_reward
-        self.locals['rewards'][:] += weighted_icm_step_reward
+        # 6. 将最终的【总加权奖励】更新给PPO Agent
+        # Wrapper返回的extrinsic_reward在这里被忽略，总奖励完全由我们的分量构成
+        self.locals['rewards'][0] = weighted_touch + weighted_hand + weighted_icm
         
         # --- 【关键修正】: 区分“手碰身体”和“手碰手”的接触 ---
         env = self.training_env.envs[0].env
