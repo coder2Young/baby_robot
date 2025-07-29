@@ -49,18 +49,9 @@ class ICMCallback(BaseCallback):
         self.icm = icm_module
         self.total_training_steps = total_training_steps
         
-        # Normalized reward weight logic (This part is correct)
-        self.lambda_icm_start, self.lambda_icm_end_unnormalized = lambda_icm_schedule
-        self.lambda_touch_start, self.lambda_touch_end_unnormalized = lambda_touch_schedule
-        self.lambda_hand_touch_start, self.lambda_hand_touch_end_unnormalized = lambda_hand_touch_schedule
-        self.total_weight = self.lambda_icm_start + self.lambda_touch_start + self.lambda_hand_touch_start
-        if self.verbose > 0:
-            print(f"Normalized reward weight activated. Constant Total Weight = {self.total_weight:.4f}")
-        end_weight_sum_unnormalized = self.lambda_icm_end_unnormalized + self.lambda_touch_end_unnormalized + self.lambda_hand_touch_end_unnormalized
-        normalization_factor = self.total_weight / end_weight_sum_unnormalized if end_weight_sum_unnormalized > 0 else 0
-        self.lambda_icm_end = self.lambda_icm_end_unnormalized * normalization_factor
-        self.lambda_touch_end = self.lambda_touch_end_unnormalized * normalization_factor
-        self.lambda_hand_touch_end = self.lambda_hand_touch_end_unnormalized * normalization_factor
+        self.lambda_icm_start, self.lambda_icm_end = lambda_icm_schedule
+        self.lambda_touch_start, self.lambda_touch_end = lambda_touch_schedule
+        self.lambda_hand_touch_start, self.lambda_hand_touch_end = lambda_hand_touch_schedule
 
         self.n_epochs = n_epochs
         self.batch_size = batch_size
@@ -189,19 +180,19 @@ class ICMCallback(BaseCallback):
         next_p_obs = torchify(new_obs_single['observation'], self.icm.device)
         next_t_obs = torchify(new_obs_single['touch'], self.icm.device)
         
-        norm_fwd_loss, _ = self.icm.compute_forward_loss(
+        norm_fwd_loss, fwd_loss = self.icm.compute_forward_loss(
             p_obs, t_obs, action_tensor, next_p_obs, next_t_obs, update_ema=True
         )
         
         # 4. 在Callback中进行加权
         weighted_touch = self.current_lambda_touch * unweighted_touch
         weighted_hand = self.current_lambda_hand_touch * unweighted_hand
-        weighted_icm = self.current_lambda_icm * norm_fwd_loss
+        weighted_icm = self.current_lambda_icm * fwd_loss.item()
         
         # 5. 累积原始值和加权值用于日志记录
         self.raw_touch_reward_sum += unweighted_touch
         self.raw_hand_reward_sum += unweighted_hand
-        self.raw_icm_reward_sum += norm_fwd_loss
+        self.raw_icm_reward_sum += fwd_loss.item()
         
         self.weighted_touch_reward_sum += weighted_touch
         self.weighted_hand_reward_sum += weighted_hand

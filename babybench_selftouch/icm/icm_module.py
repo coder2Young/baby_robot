@@ -86,7 +86,7 @@ class ICMModule(nn.Module):
             loss = self.forward_model.compute_loss(z_pred, z_next_combined)
         if update_ema:
             self.forward_loss_ema = self.ema_alpha * self.forward_loss_ema + (1 - self.ema_alpha) * loss.item()
-        norm_loss = max(0.0, loss.item() / (self.forward_loss_ema + 1e-8))
+        norm_loss = max(0.0, loss.item() / (self.forward_loss_ema))
         return norm_loss, loss
 
     def train_on_batch(self, 

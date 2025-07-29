@@ -19,9 +19,9 @@ from babybench_selftouch.icm_callback import ICMCallback
 # --- MODIFIED: flatten_obs is no longer needed ---
 # from babybench_selftouch.utils import flatten_obs
 
-LAMBDA_ICM_SCHEDULE = (0.4, 16.0)
+LAMBDA_ICM_SCHEDULE = (0.005, 0.1)
 LAMBDA_TOUCH_SCHEDULE = (10.0, 1.0)
-LAMBDA_HAND_TOUCH_SCHEDULE = (40.0, 20.0)
+LAMBDA_HAND_TOUCH_SCHEDULE = (100.0, 10.0)
 
 def main():
     """
@@ -49,19 +49,19 @@ def main():
     print(f"Identified hand body IDs: {hand_body_ids}")
     print("---------------------------------------------")
 
-    reward_mod = SoftmaxTouchReward(num_parts=1, tau=10.0, total_reward=1)
+    reward_mod = SoftmaxTouchReward(num_parts=1, tau=15.0, total_reward=1)
     
     wrapped_env = TouchRewardWrapper(
         env, 
         reward_module=reward_mod,
-        general_reward_window=60,
-        general_cooldown_period=600,
+        general_reward_window=40,
+        general_cooldown_period=200,
         hand_reward_value=1,
-        hand_reward_window=120,
-        hand_cooldown_period=60,
+        hand_reward_window=60,
+        hand_cooldown_period=30,
         hand_overhold_threshold=300,
         hand_overhold_penalty=1,
-        hand_body_ids=hand_body_ids # 正确地传递 hand_body_ids
+        hand_body_ids=hand_body_ids 
     )
     
     # === 3. 计算真实维度并初始化ICM和Callback ===
@@ -81,7 +81,7 @@ def main():
         touch_latent_dim=24,    # New hyperparameter
         hidden_dim=512,
         lr=3e-4,
-        vae_beta=0.05
+        vae_beta=0.01,
     )
 
     # 初始化Callback (Callback's initialization remains unchanged)
@@ -103,8 +103,8 @@ def main():
         "MultiInputPolicy", 
         wrapped_env, 
         verbose=1,
-        ent_coef=0.1,
-        n_steps=1024 * 4,
+        ent_coef=0.05,
+        n_steps=1024,
         learning_rate=3e-4,
     )
 
