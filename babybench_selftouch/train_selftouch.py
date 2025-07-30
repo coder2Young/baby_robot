@@ -19,7 +19,7 @@ from babybench_selftouch.icm_callback import ICMCallback
 # --- MODIFIED: flatten_obs is no longer needed ---
 # from babybench_selftouch.utils import flatten_obs
 
-LAMBDA_ICM_SCHEDULE = (0.005, 0.1)
+LAMBDA_ICM_SCHEDULE = (0.005, 0.4) # Best is 0.005, 0.1
 LAMBDA_TOUCH_SCHEDULE = (10.0, 1.0)
 LAMBDA_HAND_TOUCH_SCHEDULE = (100.0, 10.0)
 
@@ -66,7 +66,7 @@ def main():
     
     # === 3. 计算真实维度并初始化ICM和Callback ===
     obs, _ = wrapped_env.reset()
-    
+
     # --- MODIFIED: Get separate dimensions for each modality ---
     proprio_obs_dim = obs['observation'].shape[0]
     touch_obs_dim = obs['touch'].shape[0]
