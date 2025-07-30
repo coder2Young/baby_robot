@@ -80,7 +80,7 @@ def main():
         proprio_latent_dim=64,  # New hyperparameter
         touch_latent_dim=24,    # New hyperparameter
         hidden_dim=512,
-        lr=3e-4,
+        lr=1e-3,
         vae_beta=0.01,
     )
 
@@ -98,6 +98,7 @@ def main():
         verbose=2
     )
 
+    tensorboard_log_path = os.path.join(config['save_dir'], "logs")
     # === 4. 初始化PPO模型 ===
     model = PPO(
         "MultiInputPolicy", 
@@ -106,6 +107,7 @@ def main():
         ent_coef=0.05,
         n_steps=1024,
         learning_rate=3e-4,
+        tensorboard_log=tensorboard_log_path 
     )
 
     # === 5. 开始训练 ===
