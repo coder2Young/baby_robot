@@ -59,7 +59,7 @@ class Eval():
         with open(f'{self._save_dir}/logs/evaluation_{episode}.pkl', 'wb') as f:
             pickle.dump(self._trajectories, f, -1)
         if self._render:
-            bb_utils.evaluation_video(self._images, f'{self._save_dir}/videos/evaluation_{episode}.mp4') # Changed to mp4 for better compatibility
+            bb_utils.evaluation_video(self._images, f'{self._save_dir}/videos/evaluation_{episode}.avi')
 
 class EvalSelfTouch(Eval):
 
