@@ -19,7 +19,7 @@ from babybench_selftouch.icm_callback import ICMCallback
 # --- MODIFIED: flatten_obs is no longer needed ---
 # from babybench_selftouch.utils import flatten_obs
 
-LAMBDA_ICM_SCHEDULE = (0.005, 0.4) # Best is 0.005, 0.1
+LAMBDA_ICM_SCHEDULE = (0.005, 1.1) # Best is 0.005, 0.1
 LAMBDA_TOUCH_SCHEDULE = (10.0, 1.0)
 LAMBDA_HAND_TOUCH_SCHEDULE = (100.0, 10.0)
 
@@ -30,7 +30,7 @@ def main():
     # === 1. 配置与参数解析 ===
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='babybench_selftouch/config_selftouch.yml', type=str)
-    parser.add_argument('--train_for', default=1000000, type=int)
+    parser.add_argument('--train_for', default=4000000, type=int)
     args = parser.parse_args()
     with open(args.config) as f:
         config = yaml.safe_load(f)
@@ -93,6 +93,7 @@ def main():
         lambda_icm_schedule=LAMBDA_ICM_SCHEDULE,
         lambda_touch_schedule=LAMBDA_TOUCH_SCHEDULE,
         lambda_hand_touch_schedule=LAMBDA_HAND_TOUCH_SCHEDULE,
+        dynamic_weight_stop_step=1000000,  # New parameter for dynamic weight adjustment
         n_epochs=2,
         batch_size=512,
         verbose=2

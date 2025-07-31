@@ -42,6 +42,7 @@ class ICMCallback(BaseCallback):
                  lambda_icm_schedule: tuple = (5.0, 50.0),
                  lambda_touch_schedule: tuple = (10.0, 1.0),
                  lambda_hand_touch_schedule: tuple = (20.0, 2.0),
+                 dynamic_weight_stop_step: int = 1000000,
                  n_epochs: int = 8, 
                  batch_size: int = 512, 
                  verbose: int = 0):
@@ -80,6 +81,7 @@ class ICMCallback(BaseCallback):
         self.weighted_touch_reward_sum = 0.0
         self.weighted_hand_reward_sum = 0.0
         self.weighted_icm_reward_sum = 0.0
+        self.dynamic_weight_stop_step = dynamic_weight_stop_step
 
     def _on_training_start(self) -> None:
         if self.verbose > 0:
@@ -156,7 +158,7 @@ class ICMCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         # This method's logic was implemented correctly, no changes needed.
-        progress = min(1.0, self.num_timesteps / self.total_training_steps)
+        progress = min(1.0, self.num_timesteps / self.dynamic_weight_stop_step)
         self.current_lambda_icm = self.lambda_icm_start + (self.lambda_icm_end - self.lambda_icm_start) * progress
         self.current_lambda_touch = self.lambda_touch_start + (self.lambda_touch_end - self.lambda_touch_start) * progress
         self.current_lambda_hand_touch = self.lambda_hand_touch_start + (self.lambda_hand_touch_end - self.lambda_hand_touch_start) * progress
@@ -243,6 +245,20 @@ class ICMCallback(BaseCallback):
 
         self.active_hand_body_contacts = current_hand_body_contacts
         self.active_hand_hand_contacts = current_hand_hand_contacts
+        
+        if self.num_timesteps > 0 and self.num_timesteps % self.save_freq == 0:
+            
+            # --- 保存PPO策略模型 ---
+            ppo_model_path = os.path.join(self.save_path, f'p_model_{self.num_timesteps}_steps.zip')
+            self.model.save(ppo_model_path)
+            
+            # --- 保存ICM模型 ---
+            icm_model_path = os.path.join(self.save_path, f'icm_model_{self.num_timesteps}_steps.pth')
+            torch.save(self.icm.state_dict(), icm_model_path)
+            if self.verbose > 0:
+                print(f"Saved PPO model to {ppo_model_path}")
+                print(f"Saved ICM model to {icm_model_path}")
+
         return True
 
     def _on_rollout_end(self) -> None:
