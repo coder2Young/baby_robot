@@ -24,7 +24,7 @@ import math
 # --- 1. 配置参数 (CONFIGURATION PARAMETERS) ---
 
 # TODO: 请将此路径修改为您实际的TensorBoard日志目录
-LOG_DIR = './results/self_touch/logs/PPO_2' 
+LOG_DIR = './results/self_touch/logs/PPO_7' 
 
 # EMA 平滑系数 (alpha). 0.99的平滑度对应alpha为0.01
 EMA_ALPHA = 0.01

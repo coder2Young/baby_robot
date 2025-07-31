@@ -33,7 +33,7 @@ from babybench_selftouch.icm_callback import get_body_subtree
 
 # TODO: 请将此路径修改为您实际的TensorBoard日志目录
 # 例如: 'path/to/your/experiment/logs'
-LOG_DIR = './results/self_touch/logs/PPO_2/' 
+LOG_DIR = './results/self_touch/logs/PPO_7/' 
 
 # TODO: 请将此路径修改为您实验的配置文件路径
 # 这个文件是训练时生成的，通常在实验保存目录的根目录下
@@ -41,9 +41,9 @@ CONFIG_PATH = './babybench_selftouch/config_selftouch.yml'
 
 # 定义三个发育阶段 (时间步)
 STAGES = {
-    'Early Stage (0-150k steps)': (0, 150000),
-    'Middle Stage (450k-550k steps)': (450000, 550000),
-    'Late Stage (850k-1M steps)': (850000, 1000000)
+    'Early Stage (0-150k steps)': (0, 1500000),
+    'Middle Stage (450k-550k steps)': (1500000, 3000000),
+    'Late Stage (850k-1M steps)': (3000000, 4000000)
 }
 
 # 【新功能】: 定义要从热力图颜色归一化中排除的主导部位

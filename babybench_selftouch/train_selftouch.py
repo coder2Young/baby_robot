@@ -22,6 +22,7 @@ from babybench_selftouch.icm_callback import ICMCallback
 LAMBDA_ICM_SCHEDULE = (0.005, 1.1) # Best is 0.005, 0.1
 LAMBDA_TOUCH_SCHEDULE = (10.0, 1.0)
 LAMBDA_HAND_TOUCH_SCHEDULE = (100.0, 10.0)
+DYNAMIC_WEIGHT_STOP_STEP = 1000000  # New parameter for dynamic weight adjustment
 
 def main():
     """
@@ -93,7 +94,7 @@ def main():
         lambda_icm_schedule=LAMBDA_ICM_SCHEDULE,
         lambda_touch_schedule=LAMBDA_TOUCH_SCHEDULE,
         lambda_hand_touch_schedule=LAMBDA_HAND_TOUCH_SCHEDULE,
-        dynamic_weight_stop_step=1000000,  # New parameter for dynamic weight adjustment
+        dynamic_weight_stop_step=DYNAMIC_WEIGHT_STOP_STEP,  # New parameter for dynamic weight adjustment
         n_epochs=2,
         batch_size=512,
         verbose=2

@@ -249,11 +249,11 @@ class ICMCallback(BaseCallback):
         if self.num_timesteps > 0 and self.num_timesteps % self.save_freq == 0:
             
             # --- 保存PPO策略模型 ---
-            ppo_model_path = os.path.join(self.save_path, f'p_model_{self.num_timesteps}_steps.zip')
+            ppo_model_path = os.path.join(self.save_path, "ppo_model",f'p_model_{self.num_timesteps}_steps.zip')
             self.model.save(ppo_model_path)
             
             # --- 保存ICM模型 ---
-            icm_model_path = os.path.join(self.save_path, f'icm_model_{self.num_timesteps}_steps.pth')
+            icm_model_path = os.path.join(self.save_path, "icm_model", f'icm_model_{self.num_timesteps}_steps.pth')
             torch.save(self.icm.state_dict(), icm_model_path)
             if self.verbose > 0:
                 print(f"Saved PPO model to {ppo_model_path}")
