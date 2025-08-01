@@ -19,7 +19,7 @@ from babybench_selftouch.icm_callback import ICMCallback
 # --- MODIFIED: flatten_obs is no longer needed ---
 # from babybench_selftouch.utils import flatten_obs
 
-LAMBDA_ICM_SCHEDULE = (0.005, 0.8)
+LAMBDA_ICM_SCHEDULE = (0.005, 0.1)
 LAMBDA_TOUCH_SCHEDULE = (10.0, 2.5)
 LAMBDA_HAND_TOUCH_SCHEDULE = (80.0, 8.0)
 DYNAMIC_WEIGHT_STOP_STEP = 1000000   # New parameter for dynamic weight adjustment
