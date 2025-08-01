@@ -19,10 +19,10 @@ from babybench_selftouch.icm_callback import ICMCallback
 # --- MODIFIED: flatten_obs is no longer needed ---
 # from babybench_selftouch.utils import flatten_obs
 
-LAMBDA_ICM_SCHEDULE = (0.005, 1.1) # Best is 0.005, 0.1
-LAMBDA_TOUCH_SCHEDULE = (10.0, 1.0)
-LAMBDA_HAND_TOUCH_SCHEDULE = (100.0, 10.0)
-DYNAMIC_WEIGHT_STOP_STEP = 1000000  # New parameter for dynamic weight adjustment
+LAMBDA_ICM_SCHEDULE = (0.005, 0.8)
+LAMBDA_TOUCH_SCHEDULE = (10.0, 2.5)
+LAMBDA_HAND_TOUCH_SCHEDULE = (80.0, 8.0)
+DYNAMIC_WEIGHT_STOP_STEP = 1000000   # New parameter for dynamic weight adjustment
 
 def main():
     """
@@ -50,12 +50,12 @@ def main():
     print(f"Identified hand body IDs: {hand_body_ids}")
     print("---------------------------------------------")
 
-    reward_mod = SoftmaxTouchReward(num_parts=1, tau=15.0, total_reward=1)
+    reward_mod = SoftmaxTouchReward(num_parts=1, tau=20.0, total_reward=1)
     
     wrapped_env = TouchRewardWrapper(
         env, 
         reward_module=reward_mod,
-        general_reward_window=40,
+        general_reward_window=80,
         general_cooldown_period=200,
         hand_reward_value=1,
         hand_reward_window=60,
@@ -81,7 +81,7 @@ def main():
         proprio_latent_dim=64,  # New hyperparameter
         touch_latent_dim=24,    # New hyperparameter
         hidden_dim=512,
-        lr=1e-3,
+        lr=3e-4,
         vae_beta=0.01,
     )
 
@@ -90,13 +90,13 @@ def main():
         icm_module=icm,
         total_training_steps=args.train_for,
         save_path=config['save_dir'],
-        save_freq=20000,
+        save_freq=10000,
         lambda_icm_schedule=LAMBDA_ICM_SCHEDULE,
         lambda_touch_schedule=LAMBDA_TOUCH_SCHEDULE,
         lambda_hand_touch_schedule=LAMBDA_HAND_TOUCH_SCHEDULE,
         dynamic_weight_stop_step=DYNAMIC_WEIGHT_STOP_STEP,  # New parameter for dynamic weight adjustment
         n_epochs=2,
-        batch_size=512,
+        batch_size=256,
         verbose=2
     )
 
@@ -106,9 +106,9 @@ def main():
         "MultiInputPolicy", 
         wrapped_env, 
         verbose=1,
-        ent_coef=0.05,
-        n_steps=1024,
-        learning_rate=3e-4,
+        ent_coef=3e-5,
+        n_steps=1024 * 4,
+        learning_rate=1e-4,
         tensorboard_log=tensorboard_log_path 
     )
 
