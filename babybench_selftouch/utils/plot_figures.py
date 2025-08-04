@@ -1,15 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Unified, Publication-Quality Figure Generator for BabyRobot Project (V3)
+Unified, Publication-Quality Figure Generator for BabyRobot Project (V5 - Final)
 
-This version incorporates detailed user feedback for improved plotting logic,
-figure composition, and data handling, tailored for the final paper.
-
-Key Improvements:
-- Y-axis auto-scaling based on smoothed data to improve readability.
-- Robust time-series summation to fix empty plot bugs.
-- Figure composition for direct multi-panel comparisons.
-- Comprehensive ablation comparisons and simplified file organization.
+This final version incorporates an extensive list of user feedback,
+including advanced plot compositions, aesthetic fixes, and completion of
+all required figures for the paper.
 
 Author: Gemini
 Date: 2025-08-04
@@ -29,7 +24,6 @@ from typing import Dict, List, Tuple
 # =============================================================================
 
 # TODO: 请务必修改此字典，将实验名称映射到其正确的TensorBoard日志路径
-# 这是唯一需要您手动修改的地方
 EXPERIMENT_LOG_DIRS = {
     'Baseline': 'results/self_touch/logs/PPO_10',
     'Ablation_NoCuriosity': 'results/self_touch/logs/PPO_11',
@@ -64,21 +58,15 @@ def parse_tensorboard_log(log_dir: str) -> Dict[str, pd.Series]:
         ea = event_accumulator.EventAccumulator(log_dir, size_guidance={event_accumulator.SCALARS: 0})
         ea.Reload()
         tags = ea.Tags()['scalars']
-        
-        scalar_data = defaultdict(pd.Series)
+        scalar_data = {}
         for tag in tags:
-            events = ea.Scalars(tag)
-            steps = [event.step for event in events]
-            values = [event.value for event in events]
-            
-            s = pd.Series(values, index=steps)
+            s = pd.Series([e.value for e in ea.Scalars(tag)], index=[e.step for e in ea.Scalars(tag)]).sort_index()
             if s.index.has_duplicates:
                 s = s.groupby(s.index).mean()
-            
-            scalar_data[tag] = s.sort_index()
+            scalar_data[tag] = s
         
         print(f"  --> Successfully parsed {len(scalar_data)} scalar tags.")
-        return dict(scalar_data)
+        return scalar_data
     except Exception as e:
         print(f"  [Error] Failed to parse {log_dir}: {e}")
         return {}
@@ -86,23 +74,14 @@ def parse_tensorboard_log(log_dir: str) -> Dict[str, pd.Series]:
 def load_all_experiment_data(exp_log_dirs: Dict[str, str]) -> Dict[str, Dict[str, pd.Series]]:
     """加载所有实验的数据。"""
     print("\n--- Starting Data Loading Process ---")
-    all_data = {}
-    for exp_name, log_dir in exp_log_dirs.items():
-        all_data[exp_name] = parse_tensorboard_log(log_dir)
+    all_data = {exp_name: parse_tensorboard_log(log_dir) for exp_name, log_dir in exp_log_dirs.items()}
     print("--- Data Loading Complete ---\n")
     return all_data
 
 def robust_series_sum(series_list: List[pd.Series]) -> pd.Series:
-    """
-    【修复】健壮地求和多个Pandas Series，处理不对齐的索引。
-    """
-    if not series_list:
-        return pd.Series(dtype=np.float64)
-    # 移除空的Series
+    """健壮地求和多个Pandas Series，处理不对齐的索引。"""
     series_list = [s for s in series_list if s is not None and not s.empty]
-    if not series_list:
-        return pd.Series(dtype=np.float64)
-    
+    if not series_list: return pd.Series(dtype=np.float64)
     combined_df = pd.concat(series_list, axis=1)
     return combined_df.sum(axis=1).sort_index()
 
@@ -121,7 +100,6 @@ def save_plot(fig, output_path):
     plt.close(fig)
 
 def plot_time_series(data: Dict, plot_configs: List[Dict], output_path: str, title: str):
-    """灵活的时序图绘制函数，支持多子图、Y轴智能缩放和双版本输出。"""
     num_plots = len(plot_configs)
     fig, axes = plt.subplots(num_plots, 1, figsize=(10, 4 * num_plots), sharex=True)
     if num_plots == 1: axes = [axes]
@@ -129,53 +107,41 @@ def plot_time_series(data: Dict, plot_configs: List[Dict], output_path: str, tit
 
     for i, config in enumerate(plot_configs):
         ax = axes[i]
-        
-        # --- 【关键修正】: 为每个子图独立计算Y轴范围 ---
         all_smooth_series_in_ax = []
-        # ----------------------------------------------
 
         for line_conf in config['lines']:
             series = data.get(line_conf['tag'])
             if series is not None and not series.empty:
                 series_smooth = series.ewm(alpha=EMA_ALPHA).mean()
-                all_smooth_series_in_ax.append(series_smooth) # 收集平滑曲线
-                
-                # 绘制带原始数据的图 (设置半透明)
+                all_smooth_series_in_ax.append(series_smooth)
                 ax.plot(series.index, series.values, color=line_conf.get('raw_color', line_conf['color']), alpha=0.25)
-                # 绘制平滑曲线 (不设置透明度，默认为1.0)
                 ax.plot(series_smooth.index, series_smooth.values, color=line_conf['color'], label=line_conf['label'])
         
-        # --- 【关键修正】: 实现Y轴智能缩放 ---
         if all_smooth_series_in_ax:
             combined_smooth_data = pd.concat(all_smooth_series_in_ax)
-            min_val = combined_smooth_data.min()
-            max_val = combined_smooth_data.max()
-            data_range = max_val - min_val
-            
-            # 设置Y轴范围，上下各增加10%的padding
-            ax.set_ylim(
-                bottom=max(0, min_val - data_range * 0.1), 
-                top=max_val + data_range * 0.1
-            )
-        # --- [修正结束] ---
+            min_val, max_val = combined_smooth_data.min(), combined_smooth_data.max()
+            data_range = max_val - min_val if max_val > min_val else 1
+            padding = data_range * 0.1
+            bottom_limit = min_val - padding
+            # 【改进8】如果数据区间远大于0，则不再强制从0开始
+            if min_val > (max_val * 0.25) and min_val > 0:
+                 ax.set_ylim(bottom=bottom_limit, top=max_val + padding)
+            else:
+                 ax.set_ylim(bottom=max(0, bottom_limit), top=max_val + padding)
         
         ax.set_ylabel(config['ylabel'])
         ax.set_title(config['title'], fontsize=12)
-        ax.legend()
+        ax.legend(loc='best', fontsize='small') # 【改进4】
 
     axes[-1].set_xlabel('Training Steps')
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     
-    # 保存包含原始数据的版本
     save_plot(fig, output_path.replace('.png', '_raw_and_smooth.png'))
     
-    # 移除原始数据线，生成仅平滑曲线的版本
     for ax in axes:
         for line in ax.lines:
             alpha = line.get_alpha()
-            if alpha is not None and alpha < 1.0:
-                line.set_visible(False)
-    
+            if alpha is not None and alpha < 1.0: line.set_visible(False)
     save_plot(fig, output_path.replace('.png', '_smooth.png'))
 
 def plot_comparison_time_series(all_data: Dict, metric_tag: str, experiments_to_plot: List[str], output_path: str, title: str, ylabel: str):
@@ -184,38 +150,40 @@ def plot_comparison_time_series(all_data: Dict, metric_tag: str, experiments_to_
     fig.suptitle(title, fontsize=16, fontweight='bold')
     
     max_smooth_val = 0
-    all_series_smooth = []
-
+    
+    # 绘制平滑曲线和半透明的原始数据背景
     for exp_name in experiments_to_plot:
         data = all_data.get(exp_name, {})
         series = data.get(metric_tag)
         if series is not None and not series.empty:
             series_smooth = series.ewm(alpha=EMA_ALPHA).mean()
             max_smooth_val = max(max_smooth_val, series_smooth.max())
-            ax.plot(series.index, series.values, alpha=0.15)
-            all_series_smooth.append(series_smooth)
-    
-    for series_smooth, exp_name in zip(all_series_smooth, experiments_to_plot):
-        line, = ax.plot(series_smooth.index, series_smooth.values, label=exp_name)
-        # 确保原始数据和EMA曲线颜色一致
-        for line_raw in ax.lines:
-            if line_raw.get_label() == '' and np.array_equal(line_raw.get_xdata(), series_smooth.index):
-                line_raw.set_color(line.get_color())
-                break
+            
+            line, = ax.plot(series_smooth.index, series_smooth.values, label=exp_name)
+            ax.plot(series.index, series.values, color=line.get_color(), alpha=0.2)
                 
     ax.set_ylabel(ylabel)
     ax.set_xlabel('Training Steps')
-    ax.legend(title='Experiment')
-    ax.set_ylim(bottom=0, top=max_smooth_val * 1.15) # 【改进3】
+    
+    # --- 【最终修正】 ---
+    # 将图例放在左上角，并使用更小的字号
+    ax.legend(title='Experiment', loc='upper left', fontsize=9)
+    # -------------------
+    
+    ax.set_ylim(bottom=0, top=max_smooth_val * 1.15)
+    
+    # 调整布局以适应图表标题
     fig.tight_layout(rect=[0, 0, 1, 0.95])
 
+    # 保存双版本图表
     save_plot(fig, output_path.replace('.png', '_raw_and_smooth.png'))
     for line in ax.lines:
-        if line.get_alpha() is not None and line.get_alpha() < 1.0: line.set_visible(False)
+        alpha = line.get_alpha()
+        if alpha is not None and alpha < 1.0:
+            line.set_visible(False)
     save_plot(fig, output_path.replace('.png', '_smooth.png'))
 
 def plot_multi_panel_comparison(all_data: Dict, plot_configs: List[Dict], output_path: str, title: str):
-    """【新功能】绘制多面板对比图，每个面板对比不同实验的同一个指标。"""
     num_plots = len(plot_configs)
     fig, axes = plt.subplots(num_plots, 1, figsize=(10, 4 * num_plots), sharex=True)
     if num_plots == 1: axes = [axes]
@@ -241,7 +209,6 @@ def plot_multi_panel_comparison(all_data: Dict, plot_configs: List[Dict], output
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     save_plot(fig, output_path)
 
-# (plot_stacked_bar_distribution 函数保持不变，这里省略以节省空间)
 def plot_stacked_bar_distribution(exp_data: Dict, stages: Dict, output_path: str, title: str):
     stage_aggregation = {stage_name: defaultdict(float) for stage_name in stages}
     all_parts_set = set()
@@ -258,19 +225,16 @@ def plot_stacked_bar_distribution(exp_data: Dict, stages: Dict, output_path: str
     data_to_plot = defaultdict(list)
     parts_to_group = defaultdict(list)
     stage_names = list(stages.keys())
-    
     all_parts_with_data = sorted([p for p in all_parts_set if any(st.get(p,0)>0 for st in stage_aggregation.values())])
 
-    for stage_name in stage_names:
+    for i, stage_name in enumerate(stage_names):
         part_counts = stage_aggregation[stage_name]
         total_touches = sum(part_counts.values())
         if total_touches > 0:
             for part in all_parts_with_data:
                 proportion = part_counts.get(part, 0) / total_touches
-                if proportion < GROUPING_THRESHOLD:
-                    parts_to_group[stage_name].append(proportion)
-                else:
-                    data_to_plot[part].append(proportion)
+                if proportion < GROUPING_THRESHOLD: parts_to_group[i].append(proportion)
+                else: data_to_plot[part].append(proportion)
         else: 
              for part in all_parts_with_data:
                  if part in data_to_plot: data_to_plot[part].append(0)
@@ -278,25 +242,26 @@ def plot_stacked_bar_distribution(exp_data: Dict, stages: Dict, output_path: str
     for part, values in data_to_plot.items():
         while len(values) < len(stage_names): data_to_plot[part].append(0)
             
-    others_proportions = [sum(parts_to_group[stage]) for stage in stage_names]
-    if any(p > 0 for p in others_proportions):
-        data_to_plot['Others'] = others_proportions
+    others_proportions = [sum(parts_to_group.get(i, [])) for i in range(len(stage_names))]
+    if any(p > 0 for p in others_proportions): data_to_plot['Others'] = others_proportions
 
     fig, ax = plt.subplots(figsize=(10, 7))
     final_parts = sorted(data_to_plot.keys(), key=lambda p: (p == 'Others', -sum(data_to_plot.get(p, [0]))))
     colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(final_parts)))
     
+    x_pos = np.arange(len(stage_names))
     bottoms = np.zeros(len(stage_names))
     for part_name, color in zip(final_parts, colors):
         values = np.array(data_to_plot[part_name])
-        ax.bar(stage_names, values, label=part_name, bottom=bottoms, color=color)
+        ax.bar(x_pos, values, label=part_name, bottom=bottoms, color=color, width=0.6)
         bottoms += values
         
     ax.set_ylabel('Proportion of All Touches')
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.legend(title='Body Parts', bbox_to_anchor=(1.05, 1), loc='upper left')
     ax.set_ylim(0, 1)
-    plt.xticks(rotation=15, ha="right")
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(stage_names, rotation=15, ha="center") # 【改进1】
     fig.tight_layout(rect=[0, 0, 0.82, 1])
     save_plot(fig, output_path)
 
@@ -305,9 +270,10 @@ def plot_stacked_bar_distribution(exp_data: Dict, stages: Dict, output_path: str
 # =============================================================================
 
 def main():
+    """主函数，加载数据并生成所有图表。"""
     setup_plot_style()
     all_data = load_all_experiment_data(EXPERIMENT_LOG_DIRS)
-    print("\n--- Generating All Figures Based on a New Plan ---")
+    print("\n--- Generating All Figures Based on Final Plan (V5) ---")
 
     # --- 图组一：基准模型 (Baseline Model) ---
     exp_name = 'Baseline'
@@ -315,59 +281,86 @@ def main():
     if exp_data:
         exp_dir = os.path.join(BASE_OUTPUT_DIR, exp_name)
         print(f"\n[1] Generating plots for {exp_name}...")
-        # 1.1: 触摸分布
         plot_stacked_bar_distribution(exp_data, STAGES, os.path.join(exp_dir, 'fig1_1_distribution_evolution.png'), f'Touch Distribution Evolution ({exp_name})')
-        # 1.2: 核心部位趋势
         plot_time_series(exp_data, [{'title': 'Panel (a): Touch Frequency', 'ylabel': 'Frequency', 'lines': [{'tag': f'behavior_freq/{p}', 'label': p, 'color': c} for p, c in zip(['head', 'ub3', 'cb', 'lb'], ['red', 'orange', 'green', 'blue'])]},
                                     {'title': 'Panel (b): Touch Duration', 'ylabel': 'Duration', 'lines': [{'tag': f'behavior_duration/{p}', 'label': p, 'color': c} for p, c in zip(['head', 'ub3', 'cb', 'lb'], ['red', 'orange', 'green', 'blue'])]}],
                            os.path.join(exp_dir, 'fig1_2_rostro_caudal_trend.png'), f'Exploration Trend ({exp_name})')
-        # 1.3: 内部模型loss
         plot_time_series(exp_data, [{'title': 'Panel (a): VAE Reconstruction Loss', 'ylabel': 'Loss', 'lines': [{'tag': 'icm/proprio_vae_recon_loss', 'label': 'Proprio VAE', 'color': 'purple'}, {'tag': 'icm/touch_vae_recon_loss', 'label': 'Touch VAE', 'color': 'brown'}]},
                                     {'title': 'Panel (b): Forward Model Prediction Loss', 'ylabel': 'Loss', 'lines': [{'tag': 'icm/forward_loss', 'label': 'Forward Model', 'color': 'deepskyblue'}]}],
                            os.path.join(exp_dir, 'fig1_3_internal_model_loss.png'), f'Internal Model Learning ({exp_name})')
-        # 1.4: 驱动力交叉
         plot_time_series(exp_data, [{'title': 'Crossover of Learning Drivers', 'ylabel': 'Mean Weighted Reward', 'lines': [{'tag': 'reward_weighted/mean_hand', 'label': 'Weighted Hand Touch', 'color': 'purple'}, {'tag': 'reward_weighted/mean_icm', 'label': 'Weighted ICM', 'color': 'blue'}]}],
                            os.path.join(exp_dir, 'fig1_4_driver_crossover.png'), f'Evolution of Reward Components ({exp_name})')
 
-    # --- 图组二：奖励机制消融 ---
-    print("\n[2] Generating plots for Reward Ablations...")
-    # 2.1: 多样性大对比 (包含所有实验)
+    # --- 图组二：核心对比与奖励机制消融 ---
+    print("\n[2] Generating Core Comparison and Reward Ablation Plots...")
+    # 2.1: 多样性大对比 【改进1】
     plot_comparison_time_series(all_data, 'behavior/touch_diversity_by_hand', list(EXPERIMENT_LOG_DIRS.keys()), os.path.join(BASE_OUTPUT_DIR, 'fig2_1_diversity_full_comparison.png'), 'Impact of All Ablations on Exploration Diversity', 'Touch Diversity')
     
-    # 2.2: 纯好奇心
+    # 2.2 “纯触摸”+ Baseline对比 【改进2】
+    exp_name_ablation = 'Ablation_NoCuriosity'
+    exp_dir_ablation = os.path.join(BASE_OUTPUT_DIR, exp_name_ablation)
+    if all_data.get('Baseline') and all_data.get(exp_name_ablation):
+        for exp in ['Baseline', exp_name_ablation]:
+            all_data[exp]['total_freq'] = robust_series_sum([s for t, s in all_data[exp].items() if t.startswith('behavior_freq/')])
+            all_data[exp]['total_duration'] = robust_series_sum([s for t, s in all_data[exp].items() if t.startswith('behavior_duration/')])
+        
+        plot_multi_panel_comparison(all_data, 
+            [{'title': 'Total Touch Frequency Comparison', 'ylabel': 'Frequency', 'tag': 'total_freq', 'experiments': ['Baseline', exp_name_ablation]},
+             {'title': 'Total Touch Duration Comparison', 'ylabel': 'Duration', 'tag': 'total_duration', 'experiments': ['Baseline', exp_name_ablation]}],
+            os.path.join(exp_dir_ablation, 'fig2_2_pure_touch_vs_baseline.png'), f'Total Touch Behavior ({exp_name_ablation} vs Baseline)')
+
+    # 2.3: “纯好奇心”分析
     exp_name = 'Ablation_NoTouch'
     exp_data = all_data.get(exp_name)
     if exp_data:
         exp_dir = os.path.join(BASE_OUTPUT_DIR, exp_name)
         plot_time_series(exp_data, [{'title': 'Panel (a): Touch Frequency', 'ylabel': 'Frequency', 'lines': [{'tag': f'behavior_freq/{p}', 'label': p, 'color': c} for p, c in zip(['cb', 'lb', 'left_fingers', 'right_fingers'], ['g', 'b', 'c', 'm'])] + [{'tag': 'behavior/hand_to_hand_freq', 'label': 'hand_to_hand', 'color': 'k'}]},
                                     {'title': 'Panel (b): Touch Duration', 'ylabel': 'Duration', 'lines': [{'tag': f'behavior_duration/{p}', 'label': p, 'color': c} for p, c in zip(['cb', 'lb', 'left_fingers', 'right_fingers'], ['g', 'b', 'c', 'm'])] + [{'tag': 'behavior/hand_to_hand_duration', 'label': 'hand_to_hand', 'color': 'k'}]}],
-                           os.path.join(exp_dir, 'fig2_2_pure_curiosity_behavior.png'), f'Exploration Pattern ({exp_name})')
-
-    # 2.3: 纯触摸
-    exp_name = 'Ablation_NoCuriosity'
-    exp_data = all_data.get(exp_name)
-    if exp_data:
-        exp_dir = os.path.join(BASE_OUTPUT_DIR, exp_name)
-        total_freq = robust_series_sum([s for t, s in exp_data.items() if t.startswith('behavior_freq/')])
-        total_duration = robust_series_sum([s for t, s in exp_data.items() if t.startswith('behavior_duration/')])
-        plot_time_series({'total_freq': total_freq, 'total_duration': total_duration}, [{'title': 'Total Touch Frequency', 'ylabel': 'Frequency', 'lines': [{'tag': 'total_freq', 'label': 'Total Freq', 'color': 'crimson'}]},
-                                                                                        {'title': 'Total Touch Duration', 'ylabel': 'Duration', 'lines': [{'tag': 'total_duration', 'label': 'Total Duration', 'color': 'forestgreen'}]}],
-                           os.path.join(exp_dir, 'fig2_3_pure_touch_behavior.png'), f'Total Touch Behavior ({exp_name})')
+                           os.path.join(exp_dir, 'fig2_3_pure_curiosity_behavior.png'), f'Exploration Pattern ({exp_name})')
+        # 【新增图9】
+        plot_stacked_bar_distribution(exp_data, STAGES, os.path.join(exp_dir, 'fig2_4_distribution.png'), f'Touch Distribution ({exp_name})')
+        plot_time_series(exp_data, [{'title': 'Panel (a): VAE Reconstruction Loss', 'ylabel': 'Loss', 'lines': [{'tag': 'icm/proprio_vae_recon_loss', 'label': 'Proprio VAE', 'color': 'purple'}, {'tag': 'icm/touch_vae_recon_loss', 'label': 'Touch VAE', 'color': 'brown'}]},
+                                    {'title': 'Panel (b): Forward Model Prediction Loss', 'ylabel': 'Loss', 'lines': [{'tag': 'icm/forward_loss', 'label': 'Forward Model', 'color': 'deepskyblue'}]}],
+                           os.path.join(exp_dir, 'fig2_5_internal_model_loss.png'), f'Internal Model Learning ({exp_name})')
 
     # --- 图组三：课程与表征消融 ---
     print("\n[3] Generating plots for Curriculum and Representation Ablations...")
     # 3.1: 动态权重对比
-    plot_multi_panel_comparison(all_data, [{'title': 'Impact on "lb" Exploration', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/lb', 'experiments': ['Baseline', 'Ablation_NoDynamicWeights']},
-                                           {'title': 'Impact on "right_upper_leg" Exploration', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/right_upper_leg', 'experiments': ['Baseline', 'Ablation_NoDynamicWeights']}],
-                                os.path.join(BASE_OUTPUT_DIR, 'Ablation_NoDynamicWeights', 'fig3_1_dynamic_weights_comparison.png'), 'Effectiveness of Dynamic Weight Curriculum')
+    exp_name = 'Ablation_NoDynamicWeights'
+    exp_dir = os.path.join(BASE_OUTPUT_DIR, exp_name)
+    plot_multi_panel_comparison(all_data, [{'title': 'Impact on "lb" Exploration', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/lb', 'experiments': ['Baseline', exp_name]},
+                                           {'title': 'Impact on "right_upper_leg" Exploration', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/right_upper_leg', 'experiments': ['Baseline', exp_name]}],
+                                os.path.join(exp_dir, 'fig3_1_dynamic_weights_comparison.png'), 'Effectiveness of Dynamic Weight Curriculum')
+    # 【新增图3/10】
+    exp_data = all_data.get(exp_name)
+    if exp_data:
+        plot_time_series(exp_data, [{'title': 'Touch Duration on "ub2"', 'ylabel': 'Duration', 'lines': [{'tag': 'behavior_duration/ub2', 'label': 'ub2', 'color': 'red'}]},
+                                    {'title': 'Touch Duration on "ub1"', 'ylabel': 'Duration', 'lines': [{'tag': 'behavior_duration/ub1', 'label': 'ub1', 'color': 'green'}]},
+                                    {'title': 'Touch Duration on "cb"', 'ylabel': 'Duration', 'lines': [{'tag': 'behavior_duration/cb', 'label': 'cb', 'color': 'blue'}]}],
+                           os.path.join(exp_dir, 'fig3_2_minor_parts_trend.png'), f'Minor Part Exploration ({exp_name})')
+
     # 3.2: 简单触摸对比
-    plot_multi_panel_comparison(all_data, [{'title': 'Touch Duration on "head"', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/head', 'experiments': ['Baseline', 'Ablation_SimpleTouch']},
-                                           {'title': 'Touch Duration on "ub3"', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/ub3', 'experiments': ['Baseline', 'Ablation_SimpleTouch']}],
-                                os.path.join(BASE_OUTPUT_DIR, 'Ablation_SimpleTouch', 'fig3_2_simple_touch_comparison.png'), 'Behavioral Trap of Simple Touch Reward')
+    exp_name_ablation = 'Ablation_SimpleTouch'
+    exp_dir_ablation = os.path.join(BASE_OUTPUT_DIR, exp_name_ablation)
+    plot_multi_panel_comparison(all_data, [{'title': 'Touch Duration on "head"', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/head', 'experiments': ['Baseline', exp_name_ablation]},
+                                           {'title': 'Touch Duration on "ub3"', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/ub3', 'experiments': ['Baseline', exp_name_ablation]}],
+                                os.path.join(exp_dir_ablation, 'fig3_3_simple_touch_comparison.png'), 'Behavioral Trap of Simple Touch Reward')
+    # 【新增图6】
+    if all_data.get('Baseline') and all_data.get(exp_name_ablation):
+        for exp in ['Baseline', exp_name_ablation]:
+            if 'total_freq' not in all_data[exp]:
+                all_data[exp]['total_freq'] = robust_series_sum([s for t, s in all_data[exp].items() if t.startswith('behavior_freq/')])
+                all_data[exp]['total_duration'] = robust_series_sum([s for t, s in all_data[exp].items() if t.startswith('behavior_duration/')])
+        plot_multi_panel_comparison(all_data, 
+            [{'title': 'Total Touch Frequency Comparison', 'ylabel': 'Frequency', 'tag': 'total_freq', 'experiments': ['Baseline', exp_name_ablation]},
+             {'title': 'Total Touch Duration Comparison', 'ylabel': 'Duration', 'tag': 'total_duration', 'experiments': ['Baseline', exp_name_ablation]}],
+            os.path.join(exp_dir_ablation, 'fig3_4_total_touch_vs_baseline.png'), f'Total Touch Behavior ({exp_name_ablation} vs Baseline)')
 
     # 3.3: VAE vs MLP 对比
+    exp_name = 'Ablation_SimpleMLP'
+    exp_dir = os.path.join(BASE_OUTPUT_DIR, exp_name)
     baseline_loss = all_data.get('Baseline', {}).get('icm/forward_loss', pd.Series(dtype=np.float64))
-    mlp_loss = all_data.get('Ablation_SimpleMLP', {}).get('mlp_loss/total', pd.Series(dtype=np.float64))
+    mlp_loss = all_data.get(exp_name, {}).get('mlp_loss/total', pd.Series(dtype=np.float64))
     if not baseline_loss.empty: baseline_loss_norm = (baseline_loss - baseline_loss.min()) / (baseline_loss.max() - baseline_loss.min())
     else: baseline_loss_norm = pd.Series(dtype=np.float64)
     if not mlp_loss.empty: mlp_loss_norm = (mlp_loss - mlp_loss.min()) / (mlp_loss.max() - mlp_loss.min())
@@ -378,17 +371,12 @@ def main():
             {'tag': 'baseline_loss_norm', 'label': 'VAE-based Model', 'color': 'blue'}, 
             {'tag': 'mlp_loss_norm', 'label': 'End-to-End MLP', 'color': 'red'}
         ]}
-    ], os.path.join(BASE_OUTPUT_DIR, 'Ablation_SimpleMLP', 'fig3_3_panel_A_loss_dynamics.png'), 'Comparison of Internal Model Learning Dynamics')
+    ], os.path.join(exp_dir, 'fig3_5_panel_A_loss_dynamics.png'), 'Comparison of Internal Model Learning Dynamics')
     
-    fig, ax = plt.subplots(figsize=(6, 5))
-    div_baseline = all_data.get('Baseline', {}).get('behavior/touch_diversity_by_hand', pd.Series(dtype=np.float64))
-    div_mlp = all_data.get('Ablation_SimpleMLP', {}).get('behavior/touch_diversity_by_hand', pd.Series(dtype=np.float64))
-    final_div_baseline = div_baseline.ewm(alpha=EMA_ALPHA).mean().iloc[-1] if not div_baseline.empty else 0
-    final_div_mlp = div_mlp.ewm(alpha=EMA_ALPHA).mean().iloc[-1] if not div_mlp.empty else 0
-    ax.bar(['VAE-based Model', 'End-to-End MLP'], [final_div_baseline, final_div_mlp], color=['blue', 'red'])
-    ax.set_ylabel('Final Touch Diversity')
-    ax.set_title('Impact of State Representation on Behavior')
-    save_plot(fig, os.path.join(BASE_OUTPUT_DIR, 'Ablation_SimpleMLP', 'fig3_3_panel_B_behavioral_outcome.png'))
+    # 【改进5】
+    exp_data = all_data.get(exp_name)
+    if exp_data:
+        plot_stacked_bar_distribution(exp_data, STAGES, os.path.join(exp_dir, 'fig3_5_panel_B_distribution.png'), f'Touch Distribution ({exp_name})')
 
     print("\n--- All plotting tasks are complete! ---")
 
