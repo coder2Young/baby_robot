@@ -5,12 +5,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-# -------- 视觉自编码器（RGB, 64x64） --------
 class VisualAutoEncoder(nn.Module):
     def __init__(self, img_shape=(64,64), z_dim=32):
         super().__init__()
         C, H, W = 3, img_shape[0], img_shape[1]
-        # 编码器
+        # Encoder
         self.encoder = nn.Sequential(
             nn.Conv2d(C, 32, 4, 2, 1),   # (B,32,32,32)
             nn.ReLU(),
@@ -21,7 +20,7 @@ class VisualAutoEncoder(nn.Module):
             nn.Flatten(),
             nn.Linear(128*8*8, z_dim)
         )
-        # 解码器
+        # Decoder
         self.decoder = nn.Sequential(
             nn.Linear(z_dim, 128*8*8),
             nn.ReLU(),
@@ -49,7 +48,6 @@ class VisualAutoEncoder(nn.Module):
         loss = F.mse_loss(recon, img)
         return z, loss.item(), recon.detach()
 
-# -------- 本体自编码器（MLP, 466维） --------
 class ProprioAutoEncoder(nn.Module):
     def __init__(self, in_dim=466, z_dim=32):
         super().__init__()
@@ -77,7 +75,6 @@ class ProprioAutoEncoder(nn.Module):
         loss = F.mse_loss(recon, obs)
         return z, loss.item(), recon.detach()
 
-# -------- 多模态自编码器 --------
 class MultimodalAutoEncoder(nn.Module):
     def __init__(self, z_v_dim=32, z_p_dim=32, z_m_dim=32):
         super().__init__()
@@ -107,7 +104,6 @@ class MultimodalAutoEncoder(nn.Module):
         loss = F.mse_loss(recon, z_joint)
         return z_m, loss.item(), recon.detach()
 
-# ------- 管理接口类 --------
 class MultimodalAEManager:
     def __init__(self, img_shape=(64,64), proprio_dim=466, z_v_dim=32, z_p_dim=32, z_m_dim=32, device='cpu'):
         self.visual_ae = VisualAutoEncoder(img_shape, z_v_dim).to(device)
@@ -130,15 +126,13 @@ class MultimodalAEManager:
             obs = torch.from_numpy(obs).float().to(self.device)
         obs = obs.unsqueeze(0) if obs.ndim == 1 else obs
 
-        # 1. 单模态AE
+        # 1. Single-modal AE
         z_v, L_v, _ = self.visual_ae.encode_and_recon(img)
         z_p, L_p, _ = self.proprio_ae.encode_and_recon(obs)
-        # 2. 多模态AE
+        # 2. Multimodal AE
         z_m, L_m, _ = self.multi_ae.encode_and_recon(z_v, z_p)
         return {
             'z_v': z_v, 'z_p': z_p, 'z_m': z_m,
             'L_v': L_v, 'L_p': L_p, 'L_m': L_m
         }
-
-    # 可添加batch训练接口等
 

@@ -14,7 +14,6 @@ def torchify(x):
     return x
 
 def flatten_obs(obs):
-    # 可以按需拼接观测（如proprio+observation）
     if 'proprio' in obs and 'observation' in obs:
         return np.concatenate([obs['proprio'], obs['observation']]).astype(np.float32)
     elif 'proprio' in obs:

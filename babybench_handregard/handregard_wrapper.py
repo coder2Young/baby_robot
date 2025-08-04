@@ -7,9 +7,7 @@ from rewards import HandSaliencyReward, HandSkinColorReward
 
 class HandRegardRewardWrapper(gym.Wrapper):
     """
-    Hand regard奖励包装器：
-    - 主reward：多模态AE重构误差压缩提升量（视觉、本体、多模态分量可分别加权）
-    - 可选：saliency/skin/motion辅助奖励
+    Wrapper that calculates hand regard rewards based on saliency and
     """
     def __init__(self, env, multimodal_ae, hand_saliency_mod, hand_skin_mod,
                  lambda_v=1.0, lambda_p=1.0, lambda_m=1.0,
@@ -48,13 +46,12 @@ class HandRegardRewardWrapper(gym.Wrapper):
     def step(self, action):
         obs, extrinsic_reward, terminated, truncated, info = self.env.step(action)
 
-        # --- 多模态AE reward ---
+        # Multimodal AE encoding and reconstruction
         ae_out = self.ae.encode_and_recon(obs['eye_left'], obs['observation'])
         L_v = ae_out['L_v']
         L_p = ae_out['L_p']
         L_m = ae_out['L_m']
 
-        # AE提升reward（论文范式）
         eps = 1e-8
         if self.L_v_last is not None:
             reward_v = (self.L_v_last - L_v) / (self.L_v_last + eps)
@@ -63,11 +60,9 @@ class HandRegardRewardWrapper(gym.Wrapper):
         else:
             reward_v = reward_p = reward_m = 0.0
 
-        # --- 其它reward分量 ---
         saliency_reward = self.hand_saliency_mod.compute_reward(obs)
         skin_reward = self.hand_skin_mod.compute_reward(obs)
 
-        # motion bonus（可选，鼓励探索）
         if self.last_action is not None:
             action_diff = np.linalg.norm(np.array(action) - np.array(self.last_action))
             decay_factor = max(0.0, 1.0 - self.timestep / self.decay_steps)
@@ -75,19 +70,13 @@ class HandRegardRewardWrapper(gym.Wrapper):
         else:
             motion_bonus = 0.0
 
-        # --- reward加权聚合 ---
         total_reward = (self.lambda_v * reward_v +
                         self.lambda_p * reward_p +
                         self.lambda_m * reward_m +
                         self.lambda_sal * saliency_reward +
                         self.lambda_skin * skin_reward +
                         motion_bonus)
-        
-        # 打印加权后的reward分量
-        # print(f"Rewards - V: {reward_v:.4f}, P: {reward_p:.4f}, M: {reward_m:.4f}, "
-        #       f"Saliency: {saliency_reward:.4f}, Skin: {skin_reward:.4f}, Motion Bonus: {motion_bonus:.4f}")
 
-        # 更新历史
         self.L_v_last = L_v
         self.L_p_last = L_p
         self.L_m_last = L_m
