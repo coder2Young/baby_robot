@@ -288,7 +288,7 @@ def main():
         plot_time_series(exp_data, [{'title': 'Panel (a): VAE Reconstruction Loss', 'ylabel': 'Loss', 'lines': [{'tag': 'icm/proprio_vae_recon_loss', 'label': 'Proprio VAE', 'color': 'purple'}, {'tag': 'icm/touch_vae_recon_loss', 'label': 'Touch VAE', 'color': 'brown'}]},
                                     {'title': 'Panel (b): Forward Model Prediction Loss', 'ylabel': 'Loss', 'lines': [{'tag': 'icm/forward_loss', 'label': 'Forward Model', 'color': 'deepskyblue'}]}],
                            os.path.join(exp_dir, 'fig1_3_internal_model_loss.png'), f'Internal Model Learning ({exp_name})')
-        plot_time_series(exp_data, [{'title': 'Crossover of Learning Drivers', 'ylabel': 'Mean Weighted Reward', 'lines': [{'tag': 'reward_weighted/mean_hand', 'label': 'Weighted Hand Touch', 'color': 'purple'}, {'tag': 'reward_weighted/mean_icm', 'label': 'Weighted ICM', 'color': 'blue'}]}],
+        plot_time_series(exp_data, [{'title': 'Evolution of Learning Drivers', 'ylabel': 'Mean Weighted Reward', 'lines': [{'tag': 'reward_weighted/mean_hand', 'label': 'Weighted Hand Touch', 'color': 'purple'}, {'tag': 'reward_weighted/mean_icm', 'label': 'Weighted ICM', 'color': 'blue'}]}],
                            os.path.join(exp_dir, 'fig1_4_driver_crossover.png'), f'Evolution of Reward Components ({exp_name})')
 
     # --- 图组二：核心对比与奖励机制消融 ---
