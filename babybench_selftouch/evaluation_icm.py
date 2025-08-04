@@ -1,33 +1,27 @@
-# 新建文件: evaluate_icm.py
-
 import os
 import argparse
 import torch
 import numpy as np
 import h5py
 import matplotlib.pyplot as plt
-from sklearn.manifold import TSNE
 
-# 导入我们的ICM模块
 import sys
 sys.path.append(".")
 sys.path.append("..")
 from babybench_selftouch.icm.icm_module import ICMModule
 
 def plot_reconstructions(model, data_loader, device, num_samples=5):
-    """可视化原始观测和模型的重构结果"""
+    """Visualize reconstructions from the VAE"""
     model.eval()
     
-    # 从数据加载器中获取一个批次
+    # Fetch a batch of data
     p_obs, t_obs, _, _, _ = next(iter(data_loader))
     p_obs, t_obs = p_obs.to(device), t_obs.to(device)
 
-    # 通过模型进行重构
+    # Run the VAE to get reconstructions
     with torch.no_grad():
         p_recon, _, _, _ = model.proprio_vae(p_obs)
         t_recon, _, _, _ = model.touch_vae(t_obs)
-
-    # 将数据移回CPU并转为NumPy
     p_obs, p_recon = p_obs.cpu().numpy(), p_recon.cpu().numpy()
     t_obs, t_recon = t_obs.cpu().numpy(), t_recon.cpu().numpy()
     
@@ -53,7 +47,7 @@ def plot_reconstructions(model, data_loader, device, num_samples=5):
     plt.show()
 
 def visualize_latent_space(model, data_loader, device):
-    """使用t-SNE可视化隐空间"""
+    """Visualize the latent space using t-SNE"""
     model.eval()
     
     all_z_proprio = []
@@ -67,7 +61,7 @@ def visualize_latent_space(model, data_loader, device):
             _, p_mu, _, z_p = model.proprio_vae(p_obs)
             _, t_mu, _, z_t = model.touch_vae(t_obs)
             
-            all_z_proprio.append(p_mu.cpu().numpy()) # 使用mu作为稳定的表征
+            all_z_proprio.append(p_mu.cpu().numpy())
             all_z_touch.append(t_mu.cpu().numpy())
             all_has_touch.append(t_obs.sum(dim=1).cpu().numpy() > 0)
 
@@ -77,8 +71,8 @@ def visualize_latent_space(model, data_loader, device):
     
     print("Running t-SNE... (this may take a while)")
     tsne = TSNE(n_components=2, verbose=1, perplexity=30, n_iter=300)
-    
-    # 可视化本体感觉隐空间
+
+    # Visualize the proprioception latent space
     proprio_tsne = tsne.fit_transform(all_z_proprio)
     plt.figure(figsize=(10, 8))
     plt.scatter(proprio_tsne[all_has_touch, 0], proprio_tsne[all_has_touch, 1], s=5, c='r', label='With Touch')
@@ -87,7 +81,7 @@ def visualize_latent_space(model, data_loader, device):
     plt.legend()
     plt.show()
 
-    # 可视化触觉隐空间
+    # Visualize the touch latent space
     touch_tsne = tsne.fit_transform(all_z_touch)
     plt.figure(figsize=(10, 8))
     plt.scatter(touch_tsne[all_has_touch, 0], touch_tsne[all_has_touch, 1], s=5, c='r', label='With Touch')
@@ -109,11 +103,10 @@ def main():
     else:
         device = torch.device("cpu")
     print(f"Using device: {device}")
-    
-    # 1. 加载数据并准备测试集
+
+    # 1. Load data and prepare the test set
     with h5py.File(args.data_path, 'r') as hf:
         proprio_obs = hf['proprio_obs'][:]
-        # ... (此处省略与训练脚本中完全相同的数据加载和划分逻辑)
     
     dataset_size = proprio_obs.shape[0]
     indices = np.random.permutation(dataset_size)
@@ -129,20 +122,20 @@ def main():
     
     test_dataset = TensorDataset(p_obs_test, t_obs_test, act_test, next_p_obs_test, next_t_obs_test)
     test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
-    
-    # 2. 加载模型
-    # 从模型路径中推断出参数
-    # (这是一个简化的例子，更好的做法是将超参数保存在一个文件中)
+
+    # 2. Load the model
+    # Infer parameters from the model path
+    # (This is a simplified example; a better approach would be to save hyperparameters in a file)
     proprio_dim = p_obs_test.shape[1]
     touch_dim = t_obs_test.shape[1]
     action_dim = act_test.shape[1]
-    
-    # 假设的超参数，需要与训练时一致
+
+    # Hypothetical hyperparameters, must match those used during training
     model = ICMModule(proprio_dim, touch_dim, action_dim, proprio_latent_dim=8, touch_latent_dim=8, hidden_dim=512, device=device).to(device)
     model.load_state_dict(torch.load(args.model_path, map_location=device))
     print("Model loaded successfully.")
-    
-    # 3. 运行评估
+
+    # 3. Run the evaluation
     plot_reconstructions(model, test_loader, device)
     visualize_latent_space(model, test_loader, device)
 

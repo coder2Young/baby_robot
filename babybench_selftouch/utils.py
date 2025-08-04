@@ -17,18 +17,18 @@ def flatten_obs(obs):
     return np.concatenate([obs['observation'], obs['touch']]).astype(np.float32)
 
 def get_body_subtree(model, root_id):
-    """获取一个根节点下的所有子身体的ID集合。"""
+    """Get the subtree of bodies rooted at root_id."""
     subtree = {root_id}
     for body_id in range(model.nbody):
         current_id = body_id
         while current_id != -1:
-            # body_parentid 数组记录了每个body的父body的id
+            # Body's parent ID
             parent_id = model.body_parentid[current_id]
             if parent_id in subtree:
                 subtree.add(body_id)
                 break
-            # 如果父节点不是root，则继续向上查找父节点的父节点
+            # If the parent is not the root, continue to search up the hierarchy
             current_id = parent_id
-            if current_id == 0: # 到达worldbody，停止
+            if current_id == 0:  # Reached worldbody, stop
                 break
     return subtree

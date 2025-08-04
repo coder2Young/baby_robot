@@ -3,7 +3,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-# --- NEW: Import the custom loss function ---
 from .losses import sigma_vae_loss
 
 class InverseCVAE(nn.Module):
@@ -43,7 +42,6 @@ class InverseCVAE(nn.Module):
         return a_pred, mu, logvar, z
 
     def compute_loss(self, a_pred, a_true, mu, logvar, beta=1.0):
-        # --- MODIFIED: Use sigma_vae_loss instead of F.mse_loss ---
         recon_loss = sigma_vae_loss(a_pred, a_true)
         
         kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / a_true.shape[0]

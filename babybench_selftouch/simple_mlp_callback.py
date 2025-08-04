@@ -6,7 +6,7 @@ import numpy as np
 import mujoco
 from collections import defaultdict
 from stable_baselines3.common.callbacks import BaseCallback
-from .utils import torchify, get_body_subtree # 确保utils.py里的get_body_subtree被正确导入
+from .utils import torchify, get_body_subtree
 from icm.direct_prediction_mlp import DirectPredictionMLP
 import sys
 sys.path.append(".")
@@ -14,9 +14,9 @@ sys.path.append("..")
 
 class SimpleMLPCallback(BaseCallback):
     """
-    一个与ICMCallback功能对等的Callback，用于驱动DirectPredictionMLP。
-    - 拥有与ICMCallback完全相同的日志记录、参数接口和训练循环。
-    - 唯一的区别是内部模型换成了端到端的MLP。
+    A callback for training a simple MLP model to predict proprioception and touch observations.
+    This callback is similar to ICMCallback but uses a DirectPredictionMLP instead of an ICMModule.
+    It is designed to be used in a reinforcement learning training loop with Stable Baselines3.
     """
     def __init__(self, 
                  proprio_dim: int,
@@ -36,13 +36,10 @@ class SimpleMLPCallback(BaseCallback):
                  verbose: int = 0):
         super().__init__(verbose)
 
-        # --- [不同点 1] 初始化新的MLP模型 ---
         self.model_mlp = DirectPredictionMLP(proprio_dim, touch_dim, action_dim).to(device)
         self.optimizer = torch.optim.Adam(self.model_mlp.parameters(), lr=lr)
         self.device = device
-        # ------------------------------------
 
-        # --- [相同点] 以下所有参数和状态变量与ICMCallback完全一致 ---
         self.total_training_steps = total_training_steps
         self.lambda_icm_start, self.lambda_icm_end = lambda_icm_schedule
         self.lambda_touch_start, self.lambda_touch_end = lambda_touch_schedule
@@ -73,10 +70,8 @@ class SimpleMLPCallback(BaseCallback):
         self.weighted_touch_reward_sum = 0.0
         self.weighted_hand_reward_sum = 0.0
         self.weighted_icm_reward_sum = 0.0
-        # ----------------------------------------------------
-
+        
     def _on_training_start(self) -> None:
-        # --- [相同点] 这部分逻辑与ICMCallback完全相同，用于初始化geom映射 ---
         if self.verbose > 0:
             print("--- Initializing Behavior Analyzer Mappings (SimpleMLPCallback Version) ---")
         
@@ -109,10 +104,8 @@ class SimpleMLPCallback(BaseCallback):
                 self.robot_geom_to_log_name[geom_id] = geom_name or mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[geom_id])
 
         self.body_part_geoms = all_robot_geoms - self.hand_geoms
-        print("---------------------------------------------")
-
+        
     def _on_rollout_start(self) -> None:
-        # --- [相同点] 这部分逻辑与ICMCallback完全相同，用于重置日志计数器 ---
         self.rollout_touch_counts.clear()
         self.rollout_touch_durations.clear()
         self.rollout_touched_parts_by_hand.clear()
@@ -128,13 +121,13 @@ class SimpleMLPCallback(BaseCallback):
         self.weighted_icm_reward_sum = 0.0
 
     def _on_step(self) -> bool:
-        # 1. 计算动态权重 (逻辑与ICMCallback完全相同)
+        # 1. Calculate dynamic lambda values based on training progress
         progress = min(1.0, self.num_timesteps / self.dynamic_weight_stop_step)
         current_lambda_icm = self.lambda_icm_start + (self.lambda_icm_end - self.lambda_icm_start) * progress
         current_lambda_touch = self.lambda_touch_start + (self.lambda_touch_end - self.lambda_touch_start) * progress
         current_lambda_hand_touch = self.lambda_hand_touch_start + (self.lambda_hand_touch_end - self.lambda_hand_touch_start) * progress
 
-        # 2. [不同点 2] 从新的MLP模型计算“好奇心”奖励
+        # 2. Compute curiosity reward from the new MLP model
         self.model_mlp.eval()
         with torch.no_grad():
             last_obs = {k: v[0] for k, v in self.model._last_obs.items()}
@@ -151,18 +144,18 @@ class SimpleMLPCallback(BaseCallback):
             curiosity_loss, _, _ = self.model_mlp.compute_loss(next_p_pred, next_t_pred, next_p_true, next_t_true)
         unweighted_icm_reward = curiosity_loss.item()
         
-        # 3. 从info字典获取触摸奖励 (逻辑与ICMCallback完全相同)
+        # 3. Update the locals with the unweighted curiosity reward
         info = self.locals['infos'][0]
         unweighted_touch = info.get('reward_components', {}).get('unweighted_touch', 0.0)
         unweighted_hand = info.get('reward_components', {}).get('unweighted_hand', 0.0)
 
-        # 4. 组合奖励 (逻辑与ICMCallback完全相同)
+        # 4. Combine rewards
         weighted_icm = current_lambda_icm * unweighted_icm_reward
         weighted_touch = current_lambda_touch * unweighted_touch
         weighted_hand = current_lambda_hand_touch * unweighted_hand
         self.locals['rewards'][0] = weighted_icm + weighted_touch + weighted_hand
 
-        # 5. 累积奖励用于日志 (逻辑与ICMCallback完全相同)
+        # 5. Accumulate rewards for logging
         self.raw_icm_reward_sum += unweighted_icm_reward
         self.raw_touch_reward_sum += unweighted_touch
         self.raw_hand_reward_sum += unweighted_hand
@@ -170,7 +163,7 @@ class SimpleMLPCallback(BaseCallback):
         self.weighted_touch_reward_sum += weighted_touch
         self.weighted_hand_reward_sum += weighted_hand
 
-        # 6. [相同点] 行为日志埋点逻辑与ICMCallback完全相同
+        # 6. Update the contact information for the current step
         env = self.training_env.envs[0].env
         contacts = env.data.contact
         current_hand_body_contacts, current_hand_hand_contacts = set(), set()
@@ -199,18 +192,18 @@ class SimpleMLPCallback(BaseCallback):
         
         self.active_hand_body_contacts = current_hand_body_contacts
         self.active_hand_hand_contacts = current_hand_hand_contacts
-        
-        # 7. 模型保存逻辑
+
+        # 7. Model saving logic
         if self.num_timesteps > 0 and self.num_timesteps % self.save_freq == 0:
-            # PPO模型保存
+            # PPO model saving
             self.model.save(os.path.join(self.save_path, "ppo_model", f'p_model_{self.num_timesteps}_steps.zip'))
-            # [不同点] 保存新的MLP模型
+            # MLP model saving
             torch.save(self.model_mlp.state_dict(), os.path.join(self.save_path, "icm_model", f'mlp_model_{self.num_timesteps}_steps.pth'))
 
         return True
 
     def _on_rollout_end(self) -> None:
-        # 1. 记录行为和奖励日志 (这部分逻辑是正确的，保持不变)
+        # 1. Log the accumulated rewards and contact statistics
         self.logger.record('behavior/touch_diversity_by_hand', len(self.rollout_touched_parts_by_hand))
         self.logger.record('behavior/hand_to_hand_freq', self.rollout_hand_to_hand_count)
         self.logger.record('behavior/hand_to_hand_duration', self.rollout_hand_to_hand_duration)
@@ -227,7 +220,7 @@ class SimpleMLPCallback(BaseCallback):
             self.logger.record('reward_weighted/mean_touch', self.weighted_touch_reward_sum / rollout_steps)
             self.logger.record('reward_weighted/mean_hand', self.weighted_hand_reward_sum / rollout_steps)
 
-        # 2. [不同点 3] 训练新的MLP模型
+        # 2. Train the new MLP model
         if self.verbose > 1:
             print(f"\n--- Rollout ended. Training DirectPredictionMLP for {self.n_epochs} epochs... ---")
         
@@ -235,23 +228,18 @@ class SimpleMLPCallback(BaseCallback):
         buffer = self.model.rollout_buffer
         num_samples = buffer.buffer_size * buffer.n_envs
         
-        # --- [关键修正] ---
-        # 准备数据，与icm_callback.py的逻辑完全对齐
         proprio_obs_np = buffer.observations['observation'].reshape(num_samples, -1)
         touch_obs_np = buffer.observations['touch'].reshape(num_samples, -1)
         actions_np = buffer.actions.reshape(num_samples, -1)
         
-        # 使用np.roll来创建next_obs，而不是访问不存在的属性
         next_proprio_obs_np = np.roll(proprio_obs_np, -1, axis=0)
         next_touch_obs_np = np.roll(touch_obs_np, -1, axis=0)
         
-        # 将Numpy数组转换为Tensor
         p_obs = torch.from_numpy(proprio_obs_np).float().to(self.device)
         t_obs = torch.from_numpy(touch_obs_np).float().to(self.device)
         actions = torch.from_numpy(actions_np).float().to(self.device)
         next_p_obs = torch.from_numpy(next_proprio_obs_np).float().to(self.device)
         next_t_obs = torch.from_numpy(next_touch_obs_np).float().to(self.device)
-        # --- [修正结束] ---
 
         for epoch in range(self.n_epochs):
             permutation = torch.randperm(num_samples)
@@ -265,7 +253,6 @@ class SimpleMLPCallback(BaseCallback):
                 loss.backward()
                 self.optimizer.step()
         
-        # 记录最后一轮的损失
         self.logger.record('mlp_loss/total', loss.item())
         self.logger.record('mlp_loss/proprio', p_loss.item())
         self.logger.record('mlp_loss/touch', t_loss.item())

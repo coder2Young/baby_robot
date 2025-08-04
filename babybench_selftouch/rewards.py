@@ -12,10 +12,9 @@ class SoftmaxTouchReward:
       The logic for hand-specific bonuses has been moved to the wrapper.
     """
     def __init__(self, num_parts, tau=10.0, total_reward=2.0):
-        # --- MODIFIED: Store initial tau for reconfiguration ---
         self._init_tau = tau 
         self.total_reward = total_reward
-        self.reconfigure(num_parts) # Use reconfigure to do the main setup
+        self.reconfigure(num_parts)
 
     def reset(self):
         """Resets the touch counts for all parts."""
@@ -39,7 +38,6 @@ class SoftmaxTouchReward:
         """Returns a copy of the current touch counts."""
         return self.touch_counts.copy()
         
-    # --- 【新增方法】 ---
     def reconfigure(self, num_parts):
         """
         Re-initializes the module with a new number of parts.
@@ -54,4 +52,3 @@ class SoftmaxTouchReward:
         else:
             self.tau = np.asarray(self._init_tau, dtype=np.float32)
             assert self.tau.shape[0] == self.num_parts, "Tau vector must have the same size as num_parts"
-    # -------------------

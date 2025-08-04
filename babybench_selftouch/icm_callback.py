@@ -4,7 +4,6 @@ import os
 import torch
 import numpy as np
 import mujoco
-# --- 【修正】: 导入defaultdict ---
 from collections import defaultdict
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env import VecEnv
@@ -12,22 +11,21 @@ from babybench_selftouch.utils import torchify
 from babybench_selftouch.icm.icm_module import ICMModule
 
 def get_body_subtree(model, root_id):
-    """获取一个根节点下的所有子身体的ID集合。"""
+    """Get all body IDs in the subtree rooted at root_id."""
     subtree = {root_id}
-    # MjModel中的body_parentid数组记录了每个body的父body的id
+    # body_parentid is a list where each index corresponds to a body ID and the value is its parent body ID
     for body_id in range(model.nbody):
         current_id = body_id
-        while current_id != -1: # -1表示没有父节点
+        while current_id != -1:
             parent_id = model.body_parentid[current_id]
             if parent_id in subtree:
                 subtree.add(body_id)
                 break
-            # 如果父节点不是root，则继续向上查找父节点的父节点
+            # If the parent is not the root, continue to search up the hierarchy
             current_id = parent_id
-            if current_id == 0: # 到达worldbody，停止
+            if current_id == 0:
                 break
     return subtree
-# ---------------------------------------------
 
 class ICMCallback(BaseCallback):
     """
@@ -63,7 +61,6 @@ class ICMCallback(BaseCallback):
         self.robot_geom_to_log_name = {}
         self.hand_geoms = set()
 
-        # --- 【修正】: 使用defaultdict来避免KeyError ---
         self.rollout_touch_counts = defaultdict(int)
         self.rollout_touch_durations = defaultdict(int)
         self.rollout_touched_parts_by_hand = set()
@@ -125,16 +122,12 @@ class ICMCallback(BaseCallback):
                     if parent_body_name:
                         self.robot_geom_to_log_name[geom_id] = parent_body_name
         
-        # --- 【修正】: 创建精确的非手部身体geom集合 ---
         self.body_part_geoms = all_robot_geoms - self.hand_geoms
-        # -------------------------------------------
         
         if self.verbose > 0:
-            # --- 【修正/优化】: 统一打印日志 ---
             print(f"Identified {len(self.hand_geoms)} hand geoms (not including fingers).")
             print(f"Identified {len(self.body_part_geoms)} non-hand body geoms.")
             print(f"Mapped {len(self.robot_geom_to_log_name)} robot geoms to logging names.")
-            # ----------------------------------
         print("---------------------------------------------")
 
     def _on_rollout_start(self) -> None:
@@ -157,13 +150,13 @@ class ICMCallback(BaseCallback):
         self.weighted_icm_reward_sum = 0.0
 
     def _on_step(self) -> bool:
-        # This method's logic was implemented correctly, no changes needed.
+        # 1. Update dynamic weights based on training progress
         progress = min(1.0, self.num_timesteps / self.dynamic_weight_stop_step)
         self.current_lambda_icm = self.lambda_icm_start + (self.lambda_icm_end - self.lambda_icm_start) * progress
         self.current_lambda_touch = self.lambda_touch_start + (self.lambda_touch_end - self.lambda_touch_start) * progress
         self.current_lambda_hand_touch = self.lambda_hand_touch_start + (self.lambda_hand_touch_end - self.lambda_hand_touch_start) * progress
         
-        # 2. 从info字典中获取【未加权】的奖励分量
+        # 2. Get unweighted reward components
         info = self.locals['infos'][0]
         unweighted_touch = 0.0
         unweighted_hand = 0.0
@@ -172,7 +165,7 @@ class ICMCallback(BaseCallback):
             unweighted_touch = rc.get('unweighted_touch', 0.0)
             unweighted_hand = rc.get('unweighted_hand', 0.0)
 
-        # 3. 计算【未加权】的ICM奖励
+        # 3. Compute ICM forward loss
         last_obs_single = {k: v[0] for k, v in self.model._last_obs.items()}
         action_single = self.locals['actions'][0]
         new_obs_single = {k: v[0] for k, v in self.locals['new_obs'].items()}
@@ -186,12 +179,12 @@ class ICMCallback(BaseCallback):
             p_obs, t_obs, action_tensor, next_p_obs, next_t_obs, update_ema=True
         )
         
-        # 4. 在Callback中进行加权
+        # 4. Compute weighted rewards
         weighted_touch = self.current_lambda_touch * unweighted_touch
         weighted_hand = self.current_lambda_hand_touch * unweighted_hand
         weighted_icm = self.current_lambda_icm * fwd_loss.item()
         
-        # 5. 累积原始值和加权值用于日志记录
+        # 5. Update the raw and weighted reward sums
         self.raw_touch_reward_sum += unweighted_touch
         self.raw_hand_reward_sum += unweighted_hand
         self.raw_icm_reward_sum += fwd_loss.item()
@@ -200,11 +193,10 @@ class ICMCallback(BaseCallback):
         self.weighted_hand_reward_sum += weighted_hand
         self.weighted_icm_reward_sum += weighted_icm
         
-        # 6. 将最终的【总加权奖励】更新给PPO Agent
-        # Wrapper返回的extrinsic_reward在这里被忽略，总奖励完全由我们的分量构成
+        # 6. Update the locals dictionary with the new rewards
         self.locals['rewards'][0] = weighted_touch + weighted_hand + weighted_icm
         
-        # --- 【关键修正】: 区分“手碰身体”和“手碰手”的接触 ---
+        # 7. Log the body part touch counts and durations
         env = self.training_env.envs[0].env
         contacts = env.data.contact
         current_hand_body_contacts = set()
@@ -216,7 +208,7 @@ class ICMCallback(BaseCallback):
             is_geom1_hand = geom1_id in self.hand_geoms
             is_geom2_hand = geom2_id in self.hand_geoms
             
-            # --- Case 1: 手碰身体 ---
+            # --- Case 1: Hand-body contact ---
             is_geom1_body = geom1_id in self.body_part_geoms
             is_geom2_body = geom2_id in self.body_part_geoms
             
@@ -234,7 +226,7 @@ class ICMCallback(BaseCallback):
                         self.rollout_touch_counts[body_name] += 1
                         self.rollout_touched_parts_by_hand.add(body_name)
 
-            # --- Case 2: 手碰手 ---
+            # --- Case 2: Hand-hand contact ---
             elif is_geom1_hand and is_geom2_hand:
                 contact_pair = tuple(sorted((geom1_id, geom2_id)))
                 current_hand_hand_contacts.add(contact_pair)
@@ -247,12 +239,12 @@ class ICMCallback(BaseCallback):
         self.active_hand_hand_contacts = current_hand_hand_contacts
         
         if self.num_timesteps > 0 and self.num_timesteps % self.save_freq == 0:
-            
-            # --- 保存PPO策略模型 ---
+
+            # --- Save PPO policy model ---
             ppo_model_path = os.path.join(self.save_path, "ppo_model",f'p_model_{self.num_timesteps}_steps.zip')
             self.model.save(ppo_model_path)
-            
-            # --- 保存ICM模型 ---
+
+            # --- Save ICM model ---
             icm_model_path = os.path.join(self.save_path, "icm_model", f'icm_model_{self.num_timesteps}_steps.pth')
             torch.save(self.icm.state_dict(), icm_model_path)
             if self.verbose > 0:
@@ -262,12 +254,9 @@ class ICMCallback(BaseCallback):
         return True
 
     def _on_rollout_end(self) -> None:
-        # Logging of behavior and raw rewards is correct
-        # --- 【修改】: 增加手碰手的日志记录 ---
         self.logger.record('behavior/touch_diversity_by_hand', len(self.rollout_touched_parts_by_hand))
         self.logger.record('behavior/hand_to_hand_freq', self.rollout_hand_to_hand_count)
         self.logger.record('behavior/hand_to_hand_duration', self.rollout_hand_to_hand_duration)
-        # -------------------------------------
 
         for part_name, count in self.rollout_touch_counts.items():
             self.logger.record(f'behavior_freq/{part_name}', count)
@@ -282,27 +271,21 @@ class ICMCallback(BaseCallback):
             self.logger.record('reward_weighted/mean_hand', self.weighted_hand_reward_sum / rollout_steps)
             self.logger.record('reward_weighted/mean_icm', self.weighted_icm_reward_sum / rollout_steps)
         
-        # ICM MODEL TRAINING & LOGGING
         if self.verbose > 1:
             print("\n--- Rollout ended. Starting to train ICM model... ---")
         buffer = self.model.rollout_buffer
         
-        # --- 【修正】: 使用更简洁、健壮的数据准备逻辑 ---
         num_samples = buffer.buffer_size * buffer.n_envs
-        # 直接从buffer的字典中获取完整的、正确的数组
         proprio_obs = buffer.observations['observation'].reshape(num_samples, -1)
         touch_obs = buffer.observations['touch'].reshape(num_samples, -1)
         actions = buffer.actions.reshape(num_samples, -1)
-        # 使用np.roll来高效地创建next_obs
         next_proprio_obs = np.roll(proprio_obs, -1, axis=0)
         next_touch_obs = np.roll(touch_obs, -1, axis=0)
-        # 转换为Tensor
         proprio_tensor = torch.from_numpy(proprio_obs).float().to(self.icm.device)
         touch_tensor = torch.from_numpy(touch_obs).float().to(self.icm.device)
         action_tensor = torch.from_numpy(actions).float().to(self.icm.device)
         next_proprio_tensor = torch.from_numpy(next_proprio_obs).float().to(self.icm.device)
         next_touch_tensor = torch.from_numpy(next_touch_obs).float().to(self.icm.device)
-        # ----------------------------------------------------
 
         final_losses = self.icm.train_on_batch(
             proprio_tensor, touch_tensor, action_tensor, 
@@ -310,7 +293,6 @@ class ICMCallback(BaseCallback):
             n_epochs=self.n_epochs, batch_size=self.batch_size
         )
 
-        # Logging ICM losses is correct
         if self.verbose > 1:
             log_str = f"[ICM Training] Timestep: {self.num_timesteps}\n"
             proprio_recon_loss = final_losses.get('proprio_vae_recon_loss', 0.0)

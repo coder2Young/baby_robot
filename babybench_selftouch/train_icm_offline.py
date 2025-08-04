@@ -1,11 +1,9 @@
-# 文件: train_icm_offline.py (支持懒加载的最终版)
-
 import os
 import argparse
 import torch
 import numpy as np
 import h5py
-from torch.utils.data import TensorDataset, DataLoader, Dataset # 导入Dataset基类
+from torch.utils.data import TensorDataset, DataLoader, Dataset 
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -15,7 +13,6 @@ sys.path.append("..")
 from babybench_selftouch.icm.icm_module import ICMModule
 
 
-# --- 【关键新增】: 自定义的HDF5 Dataset类 ---
 class HDF5Dataset(Dataset):
     """
     An HDF5 dataset that supports lazy loading for multiprocessing.
@@ -24,8 +21,6 @@ class HDF5Dataset(Dataset):
     def __init__(self, h5_path, indices):
         self.h5_path = h5_path
         self.indices = indices
-        # --- 移除文件打开操作 ---
-        # 不要在主进程的__init__中打开文件
         self.h5_file = None
         self.keys = ['proprio_obs', 'touch_obs', 'actions', 'next_proprio_obs', 'next_touch_obs']
 
@@ -33,8 +28,6 @@ class HDF5Dataset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, index):
-        # --- 实现懒加载 ---
-        # 如果文件句柄尚未在此worker中创建，则创建它
         if self.h5_file is None:
             self.h5_file = h5py.File(self.h5_path, 'r')
 
@@ -42,13 +35,11 @@ class HDF5Dataset(Dataset):
         sample = [torch.from_numpy(self.h5_file[key][actual_idx]) for key in self.keys]
         
         return tuple(sample)
-# ---------------------------------------------
 
 
 def train_icm_offline(args):
-    """主训练函数"""
+    """Main training function for ICM with lazy loading."""
     
-    # --- 设备选择逻辑 (不变) ---
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -61,10 +52,8 @@ def train_icm_offline(args):
     os.makedirs(log_run_path, exist_ok=True)
     writer = SummaryWriter(log_dir=log_run_path)
 
-    # --- 【关键修正】: 数据加载与划分 ---
     print(f"Preparing lazy-loading dataset from {args.data_path}...")
     
-    # 我们只打开文件一次以获取总大小
     with h5py.File(args.data_path, 'r') as hf:
         dataset_size = hf['actions'].shape[0]
         proprio_dim = hf['proprio_obs'].shape[1]
@@ -78,16 +67,12 @@ def train_icm_offline(args):
     val_split = int(dataset_size * 0.9)
     train_indices, val_indices = indices[:train_split], indices[train_split:val_split]
 
-    # 使用我们新的HDF5Dataset类来创建数据集实例
     train_dataset = HDF5Dataset(h5_path=args.data_path, indices=train_indices)
     val_dataset = HDF5Dataset(h5_path=args.data_path, indices=val_indices)
 
-    # DataLoader现在会使用HDF5Dataset在后台懒加载数据
-    # 如果在Windows上或遇到h5py多进程问题，可将num_workers设为0
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True)
     
-    # --- 模型初始化 (不变) ---
     model = ICMModule(
         proprio_obs_dim=proprio_dim,
         touch_obs_dim=touch_dim,
@@ -100,7 +85,6 @@ def train_icm_offline(args):
     ).to(device)
     print("ICM Model initialized.")
 
-    # --- 训练与验证循环 (逻辑不变, 因为DataLoader抽象了数据加载) ---
     best_val_loss = float('inf')
     
     for epoch in range(args.n_epochs):
@@ -112,7 +96,6 @@ def train_icm_offline(args):
             p_obs, t_obs, act = p_obs.to(device), t_obs.to(device), act.to(device)
             next_p_obs, next_t_obs = next_p_obs.to(device), next_t_obs.to(device)
             
-            # ... (训练逻辑与上一版本完全相同)
             model.optimizer.zero_grad()
             (z_combined, 
              (proprio_recon, p_mu, p_logvar), 
@@ -166,14 +149,12 @@ def train_icm_offline(args):
             torch.save(model.state_dict(), save_path)
             print(f"  -> New best model saved to {save_path} (Val Loss: {best_val_loss:.4f})")
 
-    # 关闭文件句柄
     train_dataset.close()
     val_dataset.close()
     writer.close()
     print("Offline training complete.")
 
 if __name__ == '__main__':
-    # ... (命令行参数部分不变)
     parser = argparse.ArgumentParser(description="Offline ICM Training Script with Lazy Loading")
     parser.add_argument('--data_path', type=str, required=True, help='Path to the .h5 dataset')
     parser.add_argument('--log_dir', type=str, default='logs/icm_offline', help='Directory for logs and models')

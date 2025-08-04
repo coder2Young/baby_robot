@@ -19,11 +19,7 @@ from tensorboard.backend.event_processing import event_accumulator
 import scienceplots
 from typing import Dict, List, Tuple
 
-# =============================================================================
-# --- 1. 全局配置 (GLOBAL CONFIGURATION) ---
-# =============================================================================
-
-# TODO: 请务必修改此字典，将实验名称映射到其正确的TensorBoard日志路径
+# 1. Global Constants and Configurations
 EXPERIMENT_LOG_DIRS = {
     'Baseline': 'results/self_touch/logs/PPO_10',
     'Ablation_NoCuriosity': 'results/self_touch/logs/PPO_11',
@@ -33,7 +29,7 @@ EXPERIMENT_LOG_DIRS = {
     'Ablation_SimpleMLP': 'results/self_touch/logs/PPO_24',
 }
 
-# --- 绘图参数 ---
+# Plotting Parameters
 BASE_OUTPUT_DIR = 'results/plot'
 EMA_ALPHA = 0.01
 STAGES = {
@@ -43,12 +39,9 @@ STAGES = {
 }
 GROUPING_THRESHOLD = 0.01
 
-# =============================================================================
-# --- 2. 数据加载与处理模块 (DATA LOADING & PROCESSING) ---
-# =============================================================================
-
+# 2. Data Parsing Functions
 def parse_tensorboard_log(log_dir: str) -> Dict[str, pd.Series]:
-    """健壮地从单个TensorBoard日志目录中解析出所有标量数据。"""
+    """Parse scalar data from a TensorBoard log directory."""
     print(f"--> Parsing data from: {log_dir}")
     if not os.path.isdir(log_dir):
         print(f"  [Warning] Directory not found: {log_dir}. Skipping.")
@@ -72,23 +65,20 @@ def parse_tensorboard_log(log_dir: str) -> Dict[str, pd.Series]:
         return {}
 
 def load_all_experiment_data(exp_log_dirs: Dict[str, str]) -> Dict[str, Dict[str, pd.Series]]:
-    """加载所有实验的数据。"""
+    """Load all experiment data."""
     print("\n--- Starting Data Loading Process ---")
     all_data = {exp_name: parse_tensorboard_log(log_dir) for exp_name, log_dir in exp_log_dirs.items()}
     print("--- Data Loading Complete ---\n")
     return all_data
 
 def robust_series_sum(series_list: List[pd.Series]) -> pd.Series:
-    """健壮地求和多个Pandas Series，处理不对齐的索引。"""
+    """Robustly sum multiple Pandas Series, handling misaligned indices."""
     series_list = [s for s in series_list if s is not None and not s.empty]
     if not series_list: return pd.Series(dtype=np.float64)
     combined_df = pd.concat(series_list, axis=1)
     return combined_df.sum(axis=1).sort_index()
 
-# =============================================================================
-# --- 3. 绘图核心函数 (PLOTTING CORE FUNCTIONS) ---
-# =============================================================================
-
+# 3. Plotting Functions
 def setup_plot_style():
     plt.style.use(['science', 'notebook', 'grid'])
     plt.rcParams.update({'font.size': 12, 'figure.dpi': 200})
@@ -123,7 +113,6 @@ def plot_time_series(data: Dict, plot_configs: List[Dict], output_path: str, tit
             data_range = max_val - min_val if max_val > min_val else 1
             padding = data_range * 0.1
             bottom_limit = min_val - padding
-            # 【改进8】如果数据区间远大于0，则不再强制从0开始
             if min_val > (max_val * 0.25) and min_val > 0:
                  ax.set_ylim(bottom=bottom_limit, top=max_val + padding)
             else:
@@ -131,7 +120,7 @@ def plot_time_series(data: Dict, plot_configs: List[Dict], output_path: str, tit
         
         ax.set_ylabel(config['ylabel'])
         ax.set_title(config['title'], fontsize=12)
-        ax.legend(loc='best', fontsize='small') # 【改进4】
+        ax.legend(loc='best', fontsize='small')
 
     axes[-1].set_xlabel('Training Steps')
     fig.tight_layout(rect=[0, 0, 1, 0.95])
@@ -145,13 +134,12 @@ def plot_time_series(data: Dict, plot_configs: List[Dict], output_path: str, tit
     save_plot(fig, output_path.replace('.png', '_smooth.png'))
 
 def plot_comparison_time_series(all_data: Dict, metric_tag: str, experiments_to_plot: List[str], output_path: str, title: str, ylabel: str):
-    """在同一张图上对比多个实验的同一个指标。"""
+    """ Plot a comparison of time series data for multiple experiments."""
     fig, ax = plt.subplots(1, 1, figsize=(10, 6))
     fig.suptitle(title, fontsize=16, fontweight='bold')
     
     max_smooth_val = 0
     
-    # 绘制平滑曲线和半透明的原始数据背景
     for exp_name in experiments_to_plot:
         data = all_data.get(exp_name, {})
         series = data.get(metric_tag)
@@ -164,18 +152,11 @@ def plot_comparison_time_series(all_data: Dict, metric_tag: str, experiments_to_
                 
     ax.set_ylabel(ylabel)
     ax.set_xlabel('Training Steps')
-    
-    # --- 【最终修正】 ---
-    # 将图例放在左上角，并使用更小的字号
     ax.legend(title='Experiment', loc='upper left', fontsize=9)
-    # -------------------
-    
     ax.set_ylim(bottom=0, top=max_smooth_val * 1.15)
     
-    # 调整布局以适应图表标题
     fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-    # 保存双版本图表
     save_plot(fig, output_path.replace('.png', '_raw_and_smooth.png'))
     for line in ax.lines:
         alpha = line.get_alpha()
@@ -265,17 +246,14 @@ def plot_stacked_bar_distribution(exp_data: Dict, stages: Dict, output_path: str
     fig.tight_layout(rect=[0, 0, 0.82, 1])
     save_plot(fig, output_path)
 
-# =============================================================================
-# --- 5. 主执行逻辑 (MAIN EXECUTION LOGIC) ---
-# =============================================================================
-
+# 4. Main Function to Generate All Figures
 def main():
-    """主函数，加载数据并生成所有图表。"""
+    """Main function to load data and generate all figures."""
     setup_plot_style()
     all_data = load_all_experiment_data(EXPERIMENT_LOG_DIRS)
     print("\n--- Generating All Figures Based on Final Plan (V5) ---")
 
-    # --- 图组一：基准模型 (Baseline Model) ---
+    # Figure Group 1: Baseline Model
     exp_name = 'Baseline'
     exp_data = all_data.get(exp_name)
     if exp_data:
@@ -291,12 +269,9 @@ def main():
         plot_time_series(exp_data, [{'title': 'Evolution of Learning Drivers', 'ylabel': 'Mean Weighted Reward', 'lines': [{'tag': 'reward_weighted/mean_hand', 'label': 'Weighted Hand Touch', 'color': 'purple'}, {'tag': 'reward_weighted/mean_icm', 'label': 'Weighted ICM', 'color': 'blue'}]}],
                            os.path.join(exp_dir, 'fig1_4_driver_crossover.png'), f'Evolution of Reward Components ({exp_name})')
 
-    # --- 图组二：核心对比与奖励机制消融 ---
+    # --- Figure Group 2: Core Comparison and Reward Ablation ---
     print("\n[2] Generating Core Comparison and Reward Ablation Plots...")
-    # 2.1: 多样性大对比 【改进1】
     plot_comparison_time_series(all_data, 'behavior/touch_diversity_by_hand', list(EXPERIMENT_LOG_DIRS.keys()), os.path.join(BASE_OUTPUT_DIR, 'fig2_1_diversity_full_comparison.png'), 'Impact of All Ablations on Exploration Diversity', 'Touch Diversity')
-    
-    # 2.2 “纯触摸”+ Baseline对比 【改进2】
     exp_name_ablation = 'Ablation_NoCuriosity'
     exp_dir_ablation = os.path.join(BASE_OUTPUT_DIR, exp_name_ablation)
     if all_data.get('Baseline') and all_data.get(exp_name_ablation):
@@ -309,7 +284,6 @@ def main():
              {'title': 'Total Touch Duration Comparison', 'ylabel': 'Duration', 'tag': 'total_duration', 'experiments': ['Baseline', exp_name_ablation]}],
             os.path.join(exp_dir_ablation, 'fig2_2_pure_touch_vs_baseline.png'), f'Total Touch Behavior ({exp_name_ablation} vs Baseline)')
 
-    # 2.3: “纯好奇心”分析
     exp_name = 'Ablation_NoTouch'
     exp_data = all_data.get(exp_name)
     if exp_data:
@@ -317,21 +291,18 @@ def main():
         plot_time_series(exp_data, [{'title': 'Panel (a): Touch Frequency', 'ylabel': 'Frequency', 'lines': [{'tag': f'behavior_freq/{p}', 'label': p, 'color': c} for p, c in zip(['cb', 'lb', 'left_fingers', 'right_fingers'], ['g', 'b', 'c', 'm'])] + [{'tag': 'behavior/hand_to_hand_freq', 'label': 'hand_to_hand', 'color': 'k'}]},
                                     {'title': 'Panel (b): Touch Duration', 'ylabel': 'Duration', 'lines': [{'tag': f'behavior_duration/{p}', 'label': p, 'color': c} for p, c in zip(['cb', 'lb', 'left_fingers', 'right_fingers'], ['g', 'b', 'c', 'm'])] + [{'tag': 'behavior/hand_to_hand_duration', 'label': 'hand_to_hand', 'color': 'k'}]}],
                            os.path.join(exp_dir, 'fig2_3_pure_curiosity_behavior.png'), f'Exploration Pattern ({exp_name})')
-        # 【新增图9】
         plot_stacked_bar_distribution(exp_data, STAGES, os.path.join(exp_dir, 'fig2_4_distribution.png'), f'Touch Distribution ({exp_name})')
         plot_time_series(exp_data, [{'title': 'Panel (a): VAE Reconstruction Loss', 'ylabel': 'Loss', 'lines': [{'tag': 'icm/proprio_vae_recon_loss', 'label': 'Proprio VAE', 'color': 'purple'}, {'tag': 'icm/touch_vae_recon_loss', 'label': 'Touch VAE', 'color': 'brown'}]},
                                     {'title': 'Panel (b): Forward Model Prediction Loss', 'ylabel': 'Loss', 'lines': [{'tag': 'icm/forward_loss', 'label': 'Forward Model', 'color': 'deepskyblue'}]}],
                            os.path.join(exp_dir, 'fig2_5_internal_model_loss.png'), f'Internal Model Learning ({exp_name})')
 
-    # --- 图组三：课程与表征消融 ---
+    # --- Figure Group 3: Ablation Studies ---
     print("\n[3] Generating plots for Curriculum and Representation Ablations...")
-    # 3.1: 动态权重对比
     exp_name = 'Ablation_NoDynamicWeights'
     exp_dir = os.path.join(BASE_OUTPUT_DIR, exp_name)
     plot_multi_panel_comparison(all_data, [{'title': 'Impact on "lb" Exploration', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/lb', 'experiments': ['Baseline', exp_name]},
                                            {'title': 'Impact on "right_upper_leg" Exploration', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/right_upper_leg', 'experiments': ['Baseline', exp_name]}],
                                 os.path.join(exp_dir, 'fig3_1_dynamic_weights_comparison.png'), 'Effectiveness of Dynamic Weight Curriculum')
-    # 【新增图3/10】
     exp_data = all_data.get(exp_name)
     if exp_data:
         plot_time_series(exp_data, [{'title': 'Touch Duration on "ub2"', 'ylabel': 'Duration', 'lines': [{'tag': 'behavior_duration/ub2', 'label': 'ub2', 'color': 'red'}]},
@@ -339,13 +310,11 @@ def main():
                                     {'title': 'Touch Duration on "cb"', 'ylabel': 'Duration', 'lines': [{'tag': 'behavior_duration/cb', 'label': 'cb', 'color': 'blue'}]}],
                            os.path.join(exp_dir, 'fig3_2_minor_parts_trend.png'), f'Minor Part Exploration ({exp_name})')
 
-    # 3.2: 简单触摸对比
     exp_name_ablation = 'Ablation_SimpleTouch'
     exp_dir_ablation = os.path.join(BASE_OUTPUT_DIR, exp_name_ablation)
     plot_multi_panel_comparison(all_data, [{'title': 'Touch Duration on "head"', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/head', 'experiments': ['Baseline', exp_name_ablation]},
                                            {'title': 'Touch Duration on "ub3"', 'ylabel': 'Touch Duration', 'tag': 'behavior_duration/ub3', 'experiments': ['Baseline', exp_name_ablation]}],
                                 os.path.join(exp_dir_ablation, 'fig3_3_simple_touch_comparison.png'), 'Behavioral Trap of Simple Touch Reward')
-    # 【新增图6】
     if all_data.get('Baseline') and all_data.get(exp_name_ablation):
         for exp in ['Baseline', exp_name_ablation]:
             if 'total_freq' not in all_data[exp]:
@@ -356,7 +325,6 @@ def main():
              {'title': 'Total Touch Duration Comparison', 'ylabel': 'Duration', 'tag': 'total_duration', 'experiments': ['Baseline', exp_name_ablation]}],
             os.path.join(exp_dir_ablation, 'fig3_4_total_touch_vs_baseline.png'), f'Total Touch Behavior ({exp_name_ablation} vs Baseline)')
 
-    # 3.3: VAE vs MLP 对比
     exp_name = 'Ablation_SimpleMLP'
     exp_dir = os.path.join(BASE_OUTPUT_DIR, exp_name)
     baseline_loss = all_data.get('Baseline', {}).get('icm/forward_loss', pd.Series(dtype=np.float64))
@@ -373,7 +341,6 @@ def main():
         ]}
     ], os.path.join(exp_dir, 'fig3_5_panel_A_loss_dynamics.png'), 'Comparison of Internal Model Learning Dynamics')
     
-    # 【改进5】
     exp_data = all_data.get(exp_name)
     if exp_data:
         plot_stacked_bar_distribution(exp_data, STAGES, os.path.join(exp_dir, 'fig3_5_panel_B_distribution.png'), f'Touch Distribution ({exp_name})')

@@ -1,5 +1,3 @@
-# 文件: generate_dataset_rl.py (最终修正版)
-
 import os
 import argparse
 import yaml
@@ -19,9 +17,6 @@ from babybench_selftouch.selftouch_wrapper import TouchRewardWrapper
 
 
 class SaveTransitionsCallback(BaseCallback):
-    """
-    一个专用的Callback，在每次rollout结束时，将buffer中的数据增量保存到HDF5文件。
-    """
     def __init__(self, save_path: str, verbose: int = 0):
         super().__init__(verbose)
         self.save_path = save_path
@@ -36,14 +31,13 @@ class SaveTransitionsCallback(BaseCallback):
         return True
 
     def _on_training_start(self) -> None:
-        """在训练开始时，初始化HDF5文件和数据集。"""
-        # 从环境中获取维度信息
+        """Initializes the HDF5 file for data collection."""
+        # From the training environment, we can get the observation space and action space dimensions
         obs_space = self.training_env.observation_space
         action_dim = self.model.action_space.shape[0]
         proprio_dim = obs_space['observation'].shape[0]
         touch_dim = obs_space['touch'].shape[0]
         
-        # 创建文件和可扩展的数据集
         self.h5_file = h5py.File(self.save_path, 'w')
         self.h5_file.create_dataset('proprio_obs', shape=(0, proprio_dim), maxshape=(None, proprio_dim), dtype='f4')
         self.h5_file.create_dataset('touch_obs', shape=(0, touch_dim), maxshape=(None, touch_dim), dtype='f4')
@@ -55,10 +49,10 @@ class SaveTransitionsCallback(BaseCallback):
             print(f"HDF5 file created at {self.save_path}. Ready for data collection.")
 
     def _on_rollout_end(self) -> bool:
-        """在每次rollout结束时，提取并保存数据。"""
+        """ Collects data from the rollout buffer and saves it to the HDF5 file."""
         buffer = self.model.rollout_buffer
-        
-        # 提取数据
+
+        # Extract data
         num_samples = buffer.buffer_size * buffer.n_envs
         proprio_obs = buffer.observations['observation'].reshape(num_samples, -1)
         touch_obs = buffer.observations['touch'].reshape(num_samples, -1)
@@ -67,14 +61,14 @@ class SaveTransitionsCallback(BaseCallback):
         next_proprio_obs = np.roll(proprio_obs, -1, axis=0)
         next_touch_obs = np.roll(touch_obs, -1, axis=0)
 
-        # 移除最后一个无效的s_t+1
+        # Remove the last invalid s_t+1
         proprio_obs = proprio_obs[:-1]
         touch_obs = touch_obs[:-1]
         actions = actions[:-1]
         next_proprio_obs = next_proprio_obs[:-1]
         next_touch_obs = next_touch_obs[:-1]
-        
-        # 增量写入HDF5文件
+
+        # Incrementally write to the HDF5 file
         current_size = self.h5_file['actions'].shape[0]
         chunk_size = len(actions)
         
@@ -89,7 +83,7 @@ class SaveTransitionsCallback(BaseCallback):
         return True
 
     def _on_training_end(self) -> None:
-        """在训练结束时，关闭文件。"""
+        """Closes the HDF5 file at the end of training."""
         if self.h5_file:
             self.h5_file.close()
             print(f"\nData collection finished. HDF5 file closed at {self.save_path}.")
@@ -97,19 +91,17 @@ class SaveTransitionsCallback(BaseCallback):
 
 def main():
     parser = argparse.ArgumentParser(description="RL-Driven Data Collection Script (Final Version)")
-    # ... (parser参数与之前版本相同)
     parser.add_argument('--config', default='babybench_selftouch/config_selftouch.yml', help='Path to the environment config file')
     parser.add_argument('--steps', default=200000, type=int, help='Total number of steps to run the agent')
     parser.add_argument('--out', default='data/rl_driven_data.h5', help='Path to save the output HDF5 file')
     parser.add_argument('--ent_coef', type=float, default=1.0, help='Entropy coefficient for PPO to encourage exploration')
     args = parser.parse_args()
 
-    # --- 1. 创建并包裹环境 (逻辑不变) ---
+    # 1. Load configuration
     with open(args.config) as f:
         config = yaml.safe_load(f)
     env = bb_utils.make_env(config)
     
-    # ... (环境包裹逻辑与之前版本相同)
     num_total_parts = env.observation_space['touch'].shape[0]
     hand_parts_indices = {13, 14, 15, 19, 20, 21}
     body_parts_indices_list = sorted(list(set(range(num_total_parts)) - hand_parts_indices))
@@ -127,11 +119,11 @@ def main():
         hand_cooldown_period=30,
         hand_overhold_threshold=300,
         hand_overhold_penalty=1,
-        lambda_touch=0.1,  # 使用固定的lambda值
+        lambda_touch=0.1,
         lambda_hand_touch=10.0,
     )
 
-    # --- 2. 初始化Callback和PPO模型 ---
+    # 2. Initialize the PPO model
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     save_callback = SaveTransitionsCallback(save_path=args.out, verbose=1)
 
@@ -139,13 +131,12 @@ def main():
         "MultiInputPolicy", 
         wrapped_env, 
         verbose=1,
-        n_steps=2048, # 每次rollout收集2048步
+        n_steps=2048,
         ent_coef=args.ent_coef,
         learning_rate=1e-3
     )
 
-    # --- 3. 运行学习与采集过程 ---
-    # 【关键】将我们新建的callback传递给learn方法
+    # 3. Run the training and data collection process
     model.learn(total_timesteps=args.steps, callback=save_callback)
     
     env.close()

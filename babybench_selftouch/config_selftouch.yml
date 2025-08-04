@@ -6,7 +6,7 @@
 save_dir : results/self_touch
 behavior : self_touch   # options: self_touch, hand_regard
 scene : crib   # options: base, crib, cubes
-max_episode_steps : 4000
+max_episode_steps : 4000 # Note: Modified from 1000
 frame_skip : 1
 render_size : 480
 save_logs_every: 1000
