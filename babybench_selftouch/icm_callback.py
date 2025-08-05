@@ -80,6 +80,8 @@ class ICMCallback(BaseCallback):
         self.weighted_icm_reward_sum = 0.0
         self.dynamic_weight_stop_step = dynamic_weight_stop_step
 
+        self.last_save_timestep = 0
+
     def _on_training_start(self) -> None:
         if self.verbose > 0:
             print("--- Initializing Behavior Analyzer Mappings ---")
@@ -131,6 +133,25 @@ class ICMCallback(BaseCallback):
         print("---------------------------------------------")
 
     def _on_rollout_start(self) -> None:
+        # Check if the current number of timesteps has surpassed the next save milestone
+        if self.num_timesteps >= self.last_save_timestep + self.save_freq:
+            self.last_save_timestep += self.save_freq
+            save_step_milestone = self.last_save_timestep
+
+            # --- Save PPO policy model ---
+            ppo_model_path = os.path.join(self.save_path, "ppo_model",f'p_model_{save_step_milestone}_steps.zip')
+            self.model.save(ppo_model_path)
+
+            # --- Save ICM model ---
+            icm_model_path = os.path.join(self.save_path, "icm_model", f'icm_model_{save_step_milestone}_steps.pth')
+            torch.save(self.icm.state_dict(), icm_model_path)
+            
+            if self.verbose > 0:
+                print(f"\n--- Saving models at timestep milestone {save_step_milestone} ---")
+                print(f"Saved PPO model to {ppo_model_path}")
+                print(f"Saved ICM model to {icm_model_path}")
+                print("-------------------------------------------------")
+
         self.rollout_touch_counts.clear()
         self.rollout_touch_durations.clear()
         self.rollout_touched_parts_by_hand.clear()
@@ -237,19 +258,6 @@ class ICMCallback(BaseCallback):
 
         self.active_hand_body_contacts = current_hand_body_contacts
         self.active_hand_hand_contacts = current_hand_hand_contacts
-        
-        if self.num_timesteps > 0 and self.num_timesteps % self.save_freq == 0:
-
-            # --- Save PPO policy model ---
-            ppo_model_path = os.path.join(self.save_path, "ppo_model",f'p_model_{self.num_timesteps}_steps.zip')
-            self.model.save(ppo_model_path)
-
-            # --- Save ICM model ---
-            icm_model_path = os.path.join(self.save_path, "icm_model", f'icm_model_{self.num_timesteps}_steps.pth')
-            torch.save(self.icm.state_dict(), icm_model_path)
-            if self.verbose > 0:
-                print(f"Saved PPO model to {ppo_model_path}")
-                print(f"Saved ICM model to {icm_model_path}")
 
         return True
 
