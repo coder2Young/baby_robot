@@ -5,6 +5,7 @@ import time
 import argparse
 import mujoco
 import yaml
+import torch
 
 import mimoEnv
 from mimoEnv.envs.mimo_env import MIMoEnv
@@ -22,7 +23,7 @@ def main():
                         help='The configuration file to set up environment variables')
     parser.add_argument('--render', default=True, type=bool,
                         help='Renders a video for each episode during the evaluation.')
-    parser.add_argument('--duration', default=1000, type=int,
+    parser.add_argument('--duration', default=4000, type=int,
                         help='Total timesteps per evaluation episode')
     parser.add_argument('--episodes', default=1, type=int,
                         help='Number of evaluation episodes')
@@ -35,7 +36,9 @@ def main():
 
     # --- Path Construction (remains the same) ---
     base_save_dir = config['save_dir']
-    model_path = os.path.join(base_save_dir, "ppo_model", f"{args.trained_steps}_steps", "model.zip")
+    #model_path = os.path.join(base_save_dir, "ppo_model", f"{args.trained_steps}_steps", "model.zip")
+    # results/self_touch/ppo_model/p_model_10000_steps.zip
+    model_path = f"results/self_touch/ppo_model/p_model_{args.trained_steps}_steps.zip"
     eval_output_path = os.path.join(base_save_dir, "evaluation", f"{args.trained_steps}_steps")
 
     # --- NEW: Explicitly create the output directories for the evaluation ---
@@ -71,15 +74,21 @@ def main():
         return
 
     model = PPO.load(model_path, env=env)
+    seed = model.seed
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    print("seed used during training:", seed)
+    env.action_space.seed(seed)
+    env.observation_space.seed(seed)
 
     # The evaluation loop remains the same
     for ep_idx in range(args.episodes):
         print(f'Running evaluation episode {ep_idx+1}/{args.episodes}')
-        obs, _ = env.reset()
+        obs, _ = env.reset(seed=seed)
         evaluation.reset()
 
         for t_idx in range(args.duration):
-            action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs, deterministic=False)
             obs, _, _, _, info = env.step(action)
             evaluation.eval_step(info)
             

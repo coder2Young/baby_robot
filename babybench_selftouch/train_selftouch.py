@@ -22,6 +22,7 @@ LAMBDA_ICM_SCHEDULE = (0.005, 0.1)
 LAMBDA_TOUCH_SCHEDULE = (10.0, 2.5)
 LAMBDA_HAND_TOUCH_SCHEDULE = (80.0, 8.0)
 DYNAMIC_WEIGHT_STOP_STEP = 1000000
+SEED = 42
 
 def main():
     """
@@ -30,7 +31,7 @@ def main():
     # 1. Argument parsing and configuration loading
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='babybench_selftouch/config_selftouch.yml', type=str)
-    parser.add_argument('--train_for', default=1000000, type=int)
+    parser.add_argument('--train_for', default=2000000, type=int) # Baseline is 4M steps
     args = parser.parse_args()
     with open(args.config) as f:
         config = yaml.safe_load(f)
@@ -83,7 +84,7 @@ def main():
         icm_module=icm,
         total_training_steps=args.train_for,
         save_path=config['save_dir'],
-        save_freq=10000,
+        save_freq=4096,
         lambda_icm_schedule=LAMBDA_ICM_SCHEDULE,
         lambda_touch_schedule=LAMBDA_TOUCH_SCHEDULE,
         lambda_hand_touch_schedule=LAMBDA_HAND_TOUCH_SCHEDULE,
@@ -102,8 +103,12 @@ def main():
         ent_coef=3e-5,
         n_steps=1024 * 4,
         learning_rate=1e-4,
-        tensorboard_log=tensorboard_log_path 
+        tensorboard_log=tensorboard_log_path,
+        seed=SEED
     )
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    print("seed used during training:", model.seed)
 
     # 7. Train the model with ICM
     model.learn(total_timesteps=args.train_for, callback=icm_callback)
