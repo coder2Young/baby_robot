@@ -22,7 +22,7 @@ LAMBDA_ICM_SCHEDULE = (0.005, 0.1)
 LAMBDA_TOUCH_SCHEDULE = (10.0, 2.5)
 LAMBDA_HAND_TOUCH_SCHEDULE = (80.0, 8.0)
 DYNAMIC_WEIGHT_STOP_STEP = 1000000
-SEED = 42
+SEED = 99
 
 def main():
     """
@@ -31,7 +31,7 @@ def main():
     # 1. Argument parsing and configuration loading
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='babybench_selftouch/config_selftouch.yml', type=str)
-    parser.add_argument('--train_for', default=2000000, type=int) # Baseline is 4M steps
+    parser.add_argument('--train_for', default=4000000, type=int) # Baseline is 4M steps
     args = parser.parse_args()
     with open(args.config) as f:
         config = yaml.safe_load(f)

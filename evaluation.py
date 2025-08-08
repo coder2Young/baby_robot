@@ -15,7 +15,7 @@ import babybench.eval as bb_eval
 
 from stable_baselines3 import PPO
 
-DEFAULT_STEPS = 50000
+DEFAULT_STEPS = 2002944
 
 def main():
     parser = argparse.ArgumentParser()
@@ -25,7 +25,7 @@ def main():
                         help='Renders a video for each episode during the evaluation.')
     parser.add_argument('--duration', default=4000, type=int,
                         help='Total timesteps per evaluation episode')
-    parser.add_argument('--episodes', default=1, type=int,
+    parser.add_argument('--episodes', default=2, type=int,
                         help='Number of evaluation episodes')
     parser.add_argument('--trained_steps', default=DEFAULT_STEPS, type=int,
                         help='The training timestep of the model checkpoint to evaluate (e.g., 100000)')
