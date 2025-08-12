@@ -1,3 +1,6 @@
+# Note
+For Curiosity-Driven Multimodal Self-Exploration Project, see in the "./babybench_selftouch" folder
+
 ![BabyBench: A Multimodal Benchmark of Infant Behaviors for Developmental Artificial Intelligence](babybench/banner.png)
 
 # BabyBench 2025 Competition Starter Kit
